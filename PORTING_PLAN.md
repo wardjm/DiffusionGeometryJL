@@ -7,6 +7,11 @@ Implements *Computing Diffusion Geometry* (Jones & Lanners, 2026): data-driven
 calculus/geometry/topology on point clouds via heat diffusion and the carré du
 champ operator.
 
+> **Progress (2026-07-08):** Phase 0 done; Phase 1 mostly done (combinatorics +
+> regularise ported & parity-tested); Phase 2 done (diffusion core, γ-tensors
+> match on a torus sample, builds an `ImmersedMarkovTriple` from a point cloud).
+> 133 parity tests green. See the status column in §5 and the progress log in §8.
+
 ---
 
 ## 1. What the codebase actually is
@@ -47,9 +52,9 @@ than the original.
 
 | Python | Julia | Note |
 |---|---|---|
-| `opt_einsum.contract` | **`OMEinsum.jl`** for 4–5 tensor contractions (path optimization like opt_einsum); **`Tullio.jl`** for simple batched ones | Biggest translation surface — 19 files use `contract`. **NB:** if targeting Reactant (§7), express hot kernels as reshape + batched `*` + broadcast, *not* Tullio (scalar loops don't trace) |
-| `sklearn.NearestNeighbors` | `NearestNeighbors.jl` (`KDTree` / `knn`) | Already **1-based** |
-| `scipy.sparse.linalg.eigsh` | `Arpack.eigs(; which=:LM)` or `KrylovKit.eigsolve` | |
+| `opt_einsum.contract` | **`OMEinsum.jl`** for 4–5 tensor contractions (path optimization like opt_einsum); **`Tullio.jl`** for simple batched ones | Biggest translation surface — 19 files use `contract`. **NB:** if targeting Reactant (§7), express hot kernels as reshape + batched `*` + broadcast, *not* Tullio (scalar loops don't trace). *Not yet a dependency:* Phase 2's only contractions (`carre_du_champ_knn`, `gamma_02`) were small enough to write as an explicit per-point loop / `mul!`. First real need is Phase 3's `derivative_weak` etc. |
+| `sklearn.NearestNeighbors` | `NearestNeighbors.jl` (`KDTree` / `knn`, `sortres=true`) | Already **1-based**. Confirmed: distances match to ~1e-9, indices exact on a tie-free cloud. Tie-breaking may differ from sklearn, so Phase 2 parity feeds Python's kNN output into the downstream math rather than relying on it. |
+| `scipy.sparse.linalg.eigsh` | `Arpack.eigs(; which=:LM)` or `KrylovKit.eigsolve` | **Caveat found:** `Arpack.eigs` does *not* return eigenvalues in ascending order like `eigsh`. `compute_eigenfunction_basis` sorts eigenvalues descending explicitly (φ₀ = Perron, λ≈1, first). Eigenvectors carry gauge freedom → parity tests compare eigen*values*. |
 | `scipy.sparse.coo_matrix` | `SparseArrays.sparse(I,J,V)` | |
 | `np.linalg.eigh` / `eig` | `LinearAlgebra.eigen` (`Hermitian` for `eigh`) | |
 | `np.add.at` (scatter) | plain `for` loop with `+=` (order-independent) | `carre_du_champ_graph`, `regularise` |
@@ -147,15 +152,15 @@ input, save outputs (`.npy` / JLD2), assert Julia matches to `rtol=1e-8`
 (numerics) / exact (index arrays). The existing **~3,850 lines of pytest** are the
 spec — port the relevant tests alongside each phase.
 
-| Phase | Scope | Deliverable | Parity gate |
-|---|---|---|---|
-| **0. Skeleton** | `Project.toml`, deps, CI, `pyparity/` harness that dumps Python reference outputs to disk | Package builds, `] test` runs empty suite | Harness produces reference fixtures |
-| **1. Combinatorics + utils** | `basis_utils` (wedge/sym indices, signs, `kp1_children_and_signs`), `batch_utils`, `regularise` | Pure funcs | **Index arrays exactly match Python** (after +1 shift) |
-| **2. Diffusion core** | `diffusion_process` (knn → markov → symmetric kernel → eigenbasis), `carre_du_champ_{knn,graph}`, `gamma_compound/02/02sym` | Build a `MarkovTriple` from a point cloud | γ-tensors match on a fixed torus sample |
-| **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python |
-| **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x).grad()`-style API | `g`, `inner`, pointwise products match |
-| **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match |
-| **6. Methods + viz (optional)** | `methods/geodesics.py`, `methods/pde.py`; rewrite visualization in Makie | End-to-end examples | Notebook figures reproduce |
+| Phase | Scope | Deliverable | Parity gate | Status |
+|---|---|---|---|---|
+| **0. Skeleton** | `Project.toml`, deps, CI, `pyparity/` harness that dumps Python reference outputs to disk | Package builds, `] test` runs empty suite | Harness produces reference fixtures | ✅ done |
+| **1. Combinatorics + utils** | `basis_utils` (wedge/sym indices, signs, `kp1_children_and_signs`), `batch_utils`, `regularise` | Pure funcs | **Index arrays exactly match Python** (after +1 shift) | 🚧 index fns + `regularise` done; TODO `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector` |
+| **2. Diffusion core** | `diffusion_process` (knn → markov → symmetric kernel → eigenbasis), `carre_du_champ_{knn,graph}`, `gamma_compound/02/02sym` | Build a `MarkovTriple` from a point cloud | γ-tensors match on a fixed torus sample | ✅ done (`carre_du_champ_graph` deferred — only `from_edges` needs it) |
+| **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python | ⬜ next |
+| **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x).grad()`-style API | `g`, `inner`, pointwise products match | ⬜ |
+| **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match | ⬜ |
+| **6. Methods + viz (optional)** | `methods/geodesics.py`, `methods/pde.py`; rewrite visualization in Makie | End-to-end examples | Notebook figures reproduce | ⬜ |
 
 ### Recommended tracer bullet
 The vertical slice Phase 1 → 2 → minimal 4/5 needed to run
@@ -218,6 +223,33 @@ kernels; wrong tool for the rest.
 
 Treat this as an optional **Phase 3.5** acceleration pass, gated by the same
 parity tests as Phase 3.
+
+---
+
+## 8. Progress log
+
+- **Phase 0 — done.** Package skeleton (`Project.toml`, `src/DiffusionGeometryJ.jl`),
+  GitHub Actions CI, and the `pyparity/gen_fixtures.py` harness that dumps Python
+  reference outputs to `test/fixtures/*.npz`. Fixtures are committed so CI needs
+  no Python.
+- **Phase 1 — mostly done.** `basis_utils` (`get_symmetric_basis_indices`,
+  `get_wedge_basis_indices`, `get_wedge_product_indices`, `kp1_children_and_signs`,
+  `lex_rank`) and `regularise` (`regularise_diffusion`, `regularise_bandlimit`)
+  ported and parity-tested. Index arrays match exactly under the +1 shift.
+  *Remaining:* `batch_utils`, `expand_symmetric_tensor_coeffs` /
+  `symmetrise_tensor_coeffs`, `form_to_ambient_polyvector`.
+- **Phase 2 — done.** `diffusion_process`, `carre_du_champ_knn`,
+  `gamma_compound/02/02sym`, and `(Immersed)MarkovTriple` +
+  `immersed_triple_from_point_cloud`. The γ-tensor gate passes on a torus sample
+  (`rtol 1e-8`); markov chain, symmetric kernel, and `K_sym` eigenvalues are also
+  parity-tested. *Deferred:* `carre_du_champ_graph` (edge/graph path — only
+  `from_edges` needs it).
+
+**Harness conventions established** (also in `README.md`): 1-based indexing with
+the `v .+ 1` parity convention; `NPZ.jl` cannot read zero-element arrays, so the
+generator skips empty fixtures and those edge cases are asserted directly in
+Julia; gauge-free quantities (eigenvectors, kNN tie-breaking) are parity-tested
+via invariants rather than the raw output.
 
 ---
 
