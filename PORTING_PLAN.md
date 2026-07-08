@@ -10,8 +10,10 @@ champ operator.
 > **Progress (2026-07-08):** Phase 0 done; Phase 1 mostly done (combinatorics +
 > regularise ported & parity-tested); Phase 2 done (diffusion core, γ-tensors
 > match on a torus sample, builds an `ImmersedMarkovTriple` from a point cloud);
-> Phase 3 done (all weak-operator builders match Python via OMEinsum).
-> 147 parity tests green. See the status column in §5 and the progress log in §8.
+> Phase 3 done (all weak-operator builders match Python via OMEinsum);
+> Phase 4 done (spaces + tensor algebra: Gram/inner/metric, pointwise products,
+> wedge/tensor products, symmetrise/expand/transpose, direct sums all match).
+> 182 parity tests green. See the status column in §5 and the progress log in §8.
 
 ---
 
@@ -159,7 +161,7 @@ spec — port the relevant tests alongside each phase.
 | **1. Combinatorics + utils** | `basis_utils` (wedge/sym indices, signs, `kp1_children_and_signs`), `batch_utils`, `regularise` | Pure funcs | **Index arrays exactly match Python** (after +1 shift) | 🚧 index fns + `regularise` done; TODO `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector` |
 | **2. Diffusion core** | `diffusion_process` (knn → markov → symmetric kernel → eigenbasis), `carre_du_champ_{knn,graph}`, `gamma_compound/02/02sym` | Build a `MarkovTriple` from a point cloud | γ-tensors match on a fixed torus sample | ✅ done (`carre_du_champ_graph` deferred — only `from_edges` needs it) |
 | **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python | ✅ done (OMEinsum `@ein_str`; row-major `np_reshape`) |
-| **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x).grad()`-style API | `g`, `inner`, pointwise products match | ⬜ |
+| **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x)`-style API | `g`, `inner`, pointwise products match | ✅ done (operator-coupled tensor methods deferred to Phase 5) |
 | **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match | ⬜ |
 | **6. Methods + viz (optional)** | `methods/geodesics.py`, `methods/pde.py`; rewrite visualization in Makie | End-to-end examples | Notebook figures reproduce | ⬜ |
 
@@ -259,6 +261,29 @@ parity tests as Phase 3.
   k≥2 up-Laplacian's batched `np.linalg.solve` is a per-`(p,J)` `lu!`/`ldiv!` loop.
   Fixtures store the γ-tensor *inputs* + reference matrices so the gate targets the
   weak builders in isolation (eigenbasis gauge / cdc are covered by earlier phases).
+
+- **Phase 4 — done.** The tensor algebra layer plus the minimal `DiffusionGeometry`
+  / `GammaCache` host needed to carry it. Ported: `batch_utils`,
+  `expand`/`symmetrise_tensor_coeffs`, `basis_conversions` (`_to`/`_from_pointwise_basis`),
+  `_metric_apply`, the abstract `AbstractTensorSpace`/`AbstractTensor`, all concrete
+  spaces + tensors (`FunctionSpace`/`ScalarFunction`, `VectorFieldSpace`/`VectorField`,
+  `FormSpace`/`Form`, `Tensor02Space`/`Tensor02`, `Tensor02SymSpace`/`Tensor02Sym`,
+  `DirectSumSpace`/`DirectSumElement`), arithmetic (`+ - *` scalar/function,
+  pointwise `/`, `^`), `wedge`, tensor product of 1-forms, `symmetrise` / `full_tensor`
+  / `transpose_tensor`, `flat` / `sharp`, `pack`/`unpack`, and the `g` / `inner` /
+  `l2_norm` / `pointwise_norm` metric API. The `tensor_algebra.npz` fixture builds a
+  Python `DiffusionGeometry` on the torus and stores its eigenbasis / measure / γ so
+  the Julia host is reconstructed gauge-for-gauge (the cache's `gamma_coords` is
+  seeded from the fixture because Python regularises the immersion coordinates
+  inside the constructor). Key translation notes: `Function` is renamed
+  `ScalarFunction` (Julia reserves `Function`); every flatten between a coefficient
+  vector and `(n1, C)`/`(n, C)` goes through `np_reshape` so the layout matches the
+  Gram basis; `_is_orthonormal` replicates numpy `allclose(atol=1e-10, rtol=1e-5)`
+  exactly so `_from_pointwise_basis` picks the same Gram-inverse branch. The
+  differential-operator accessors (`grad`, `d(k)`, `laplacian`, `hessian`,
+  `levi_civita`, `lie_bracket`) and the operator-coupled tensor methods
+  (`VectorField.operator`, `Tensor02` action, form interior product, `to_ambient`,
+  Hodge decomposition) are deferred to Phase 5 with the `LinearOperator` layer.
 
 **Harness conventions established** (also in `README.md`): 1-based indexing with
 the `v .+ 1` parity convention; `NPZ.jl` cannot read zero-element arrays, so the

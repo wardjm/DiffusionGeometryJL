@@ -105,6 +105,65 @@ function get_wedge_product_indices(d::Integer, k1::Integer, k2::Integer)
 end
 
 """
+    expand_symmetric_tensor_coeffs(coeffs, n_coefficients, d) -> Array
+
+Expand symmetric (0,2)-tensor coefficients (last axis `n1 · d_sym`,
+`d_sym = d(d+1)/2`) to the full `n1 · d²` basis, mirroring each off-diagonal
+component onto its transpose. Leading axes are treated as batch dims.
+"""
+function expand_symmetric_tensor_coeffs(coeffs::AbstractArray, n_coefficients::Integer, d::Integer)
+    n1 = n_coefficients
+    d_sym = d * (d + 1) ÷ 2
+    L = size(coeffs)[end]
+    @assert L == n1 * d_sym "Symmetric tensor coefficients must have last dimension $(n1 * d_sym), got $(size(coeffs))"
+    batch = size(coeffs)[1:end-1]
+    B = prod(batch; init=1)
+    flat = np_reshape(coeffs, B, n1, d_sym)                 # (B, n1, d_sym)
+    expanded = zeros(eltype(coeffs), B, n1, d * d)
+    sym = get_symmetric_basis_indices(d)                    # (d_sym, 2), 1-based
+    @inbounds for a in 1:d_sym
+        j1, k1 = sym[a, 1], sym[a, 2]
+        lin = (j1 - 1) * d + k1                             # 1-based column in d²
+        @views expanded[:, :, lin] .= flat[:, :, a]
+        if j1 != k1
+            tlin = (k1 - 1) * d + j1
+            @views expanded[:, :, tlin] .= flat[:, :, a]
+        end
+    end
+    return np_reshape(expanded, batch..., n1 * d * d)
+end
+
+"""
+    symmetrise_tensor_coeffs(coeffs, n_coefficients, d) -> Array
+
+Project full (0,2)-tensor coefficients (last axis `n1 · d²`) onto the symmetric
+subspace, returning `n1 · d_sym` coefficients. Off-diagonal components average
+`(T_{jk} + T_{kj})/2`. Leading axes are batch dims.
+"""
+function symmetrise_tensor_coeffs(coeffs::AbstractArray, n_coefficients::Integer, d::Integer)
+    n1 = n_coefficients
+    d_sym = d * (d + 1) ÷ 2
+    L = size(coeffs)[end]
+    @assert L == n1 * d * d "Full tensor coefficients must have last dimension $(n1 * d * d), got $(size(coeffs))"
+    batch = size(coeffs)[1:end-1]
+    B = prod(batch; init=1)
+    flat = np_reshape(coeffs, B, n1, d * d)                 # (B, n1, d²)
+    sym = get_symmetric_basis_indices(d)
+    out = Array{eltype(coeffs)}(undef, B, n1, d_sym)
+    @inbounds for a in 1:d_sym
+        j1, k1 = sym[a, 1], sym[a, 2]
+        orig = (j1 - 1) * d + k1
+        if j1 == k1
+            @views out[:, :, a] .= flat[:, :, orig]
+        else
+            tlin = (k1 - 1) * d + j1
+            @views out[:, :, a] .= 0.5 .* (flat[:, :, orig] .+ flat[:, :, tlin])
+        end
+    end
+    return np_reshape(out, batch..., n1 * d_sym)
+end
+
+"""
     kp1_children_and_signs(d, k) -> (idx_k, idx_kp1, children, signs)
 
 For degree `k` (`1 ≤ k ≤ d-1`): the degree-`k` and degree-`(k+1)` wedge bases,

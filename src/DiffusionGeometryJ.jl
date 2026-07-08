@@ -33,7 +33,38 @@ export hessian_functions, hessian_coords, hessian_02_weak, hessian_02_sym_weak
 export up_delta_weak, levi_civita_02_weak, lie_bracket_weak
 export metric, gram
 
-# ── Later phases wire in here (tensor algebra, operators + orchestrator).
-#    See PORTING_PLAN.md.
+# ── Phase 4: spaces + tensor algebra ──────────────────────────────────────────
+include("utils/batch_utils.jl")
+include("utils/basis_conversions.jl")
+include("tensors/base_tensor/abstract.jl")
+include("core/geometry/cache.jl")
+include("core/geometry/diffusion_geometry.jl")
+include("tensors/base_tensor/base_tensor_space.jl")
+include("tensors/functions/functions.jl")
+include("tensors/vector_fields/vector_fields.jl")
+include("tensors/forms/forms.jl")
+include("tensors/tensor02/tensor02.jl")
+include("tensors/tensor02sym/tensor02sym.jl")
+include("tensors/direct_sum/direct_sum.jl")
+include("tensors/base_tensor/base_tensor.jl")
+
+export compatible_batches, expand_symmetric_tensor_coeffs, symmetrise_tensor_coeffs
+export GammaCache, gamma_coords, gamma_functions, gamma_mixed, gamma_coords_compound
+export DiffusionGeometry, npoints, ambient_dim, n_coefficients, n_function_basis,
+       function_basis, measure, immersion_coords
+export function_space, vector_field_space, form_space, tensor02_space, tensor02sym_space
+export dg_function, dg_vector_field, dg_form, dg_tensor02, dg_tensor02sym
+export g, inner, l2_norm, pointwise_norm
+export AbstractTensor, AbstractTensorSpace
+export FunctionSpace, VectorFieldSpace, FormSpace, Tensor02Space, Tensor02SymSpace,
+       DirectSumSpace
+export ScalarFunction, VectorField, Form, Tensor02, Tensor02Sym, DirectSumElement
+export cdc_components, component_dim, space_dim, gram_inv, orthonormal_basis,
+       metric_apply, metric_tensor, from_pointwise, wrap
+export to_pointwise_basis, wedge, sharp, flat, symmetrise, full_tensor,
+       transpose_tensor, degree
+export pack, unpack, split_coeffs
+
+# ── Later phases wire in here (operators + orchestrator). See PORTING_PLAN.md.
 
 end # module

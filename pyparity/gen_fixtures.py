@@ -261,6 +261,114 @@ def gen_weak_operators(outdir: str) -> None:
     save(outdir, "weak_operators", **arrays)
 
 
+def gen_tensor_algebra(outdir: str) -> None:
+    """Phase 4: spaces + tensor algebra.
+
+    Build a Python DiffusionGeometry on the torus sample, then dump the inputs the
+    Julia host needs (function basis, measure, immersion coords, kernel/nbr for the
+    regularise + cdc closures, n0/n1) alongside reference outputs for Gram matrices,
+    inner products / pointwise metric, pointwise products, wedge / tensor products,
+    symmetrise / expand / transpose, and a direct sum. The Julia side reconstructs
+    the same dg (seeding its cdc from the stored kernel) so the comparison isolates
+    the tensor algebra from eigenbasis gauge.
+    """
+    print("tensor_algebra:")
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+
+    n, d = 60, 3
+    knn_kernel, knn_bandwidth = 20, 8
+    n0, n1 = 8, 4
+    data = torus_sample(n)
+
+    dg = DiffusionGeometry.from_point_cloud(
+        data, n_function_basis=n0, n_coefficients=n1,
+        knn_kernel=knn_kernel, knn_bandwidth=knn_bandwidth,
+        c=0, bandwidth_variability=-0.5, regularisation_method="diffusion")
+
+    # Rebuild the underlying kernel/nbr so the Julia side can wire cdc + regularise.
+    nbr_distances, nbr_indices = knn_graph(data, knn_kernel)
+    kernel, bandwidths = markov_chain(
+        nbr_distances, nbr_indices, c=0, bandwidth_variability=-0.5,
+        knn_bandwidth=knn_bandwidth)
+
+    u = dg.function_basis
+    measure = dg.measure
+    gamma_coords = dg.cache.gamma_coords
+
+    rng = np.random.default_rng(7)
+    f_data = rng.standard_normal(n)
+    h_data = rng.standard_normal(n)
+    X_data = rng.standard_normal((n, d))
+    Y_data = rng.standard_normal((n, d))
+    a1_data = rng.standard_normal((n, d))          # 1-form pointwise data
+    b1_data = rng.standard_normal((n, d))
+    w2_data = rng.standard_normal((n, d * (d - 1) // 2))  # 2-form data (C(d,2))
+    T_data = rng.standard_normal((n, d, d))
+    d_sym = d * (d + 1) // 2
+    S_data = rng.standard_normal((n, d_sym))
+
+    f = dg.function(f_data)
+    h = dg.function(h_data)
+    X = dg.vector_field(X_data)
+    Y = dg.vector_field(Y_data)
+    a1 = dg.form(a1_data, 1)
+    b1 = dg.form(b1_data, 1)
+    w2 = dg.form(w2_data, 2)
+    T = dg.tensor02(T_data.reshape(n, d * d))
+    S = dg.tensor02sym(S_data)
+
+    arrays = dict(
+        data=data, kernel=kernel, nbr_indices=nbr_indices, bandwidths=bandwidths,
+        u=u, measure=measure, gamma_coords=gamma_coords,
+        n0=np.int64(n0), n1=np.int64(n1), dim=np.int64(d),
+        f_data=f_data, h_data=h_data, X_data=X_data, Y_data=Y_data,
+        a1_data=a1_data, b1_data=b1_data, w2_data=w2_data,
+        T_data=T_data.reshape(n, d * d), S_data=S_data,
+        # coefficients of the constructed tensors (basis-conversion round trips)
+        f_coeffs=f.coeffs, X_coeffs=X.coeffs, a1_coeffs=a1.coeffs,
+        w2_coeffs=w2.coeffs, T_coeffs=T.coeffs, S_coeffs=S.coeffs,
+        # Gram matrices
+        gram_function=dg.function_space.gram,
+        gram_vector_field=dg.vector_field_space.gram,
+        gram_form1=dg.form_space(1).gram,
+        gram_form2=dg.form_space(2).gram,
+        gram_tensor02=dg.tensor02_space.gram,
+        gram_tensor02sym=dg.tensor02sym_space.gram,
+        gram_inv_vector_field=dg.vector_field_space.gram_inv,
+        # inner products (global L²) and pointwise metric
+        inner_ff=np.asarray(dg.inner(f, h)),
+        inner_XY=np.asarray(dg.inner(X, Y)),
+        inner_ab=np.asarray(dg.inner(a1, b1)),
+        inner_TT=np.asarray(dg.inner(T, T)),
+        inner_SS=np.asarray(dg.inner(S, S)),
+        g_XY=dg.g(X, Y),
+        norm_X=np.asarray(dg.norm(X)),
+        pnorm_X=dg.pointwise_norm(X),
+        # pointwise products
+        fX_coeffs=(f * X).coeffs,
+        fT_coeffs=(f * T).coeffs,
+        fh_coeffs=(f * h).coeffs,
+        Xdivf_coeffs=(X / f).coeffs,
+        # wedge and tensor products
+        wedge_ab_coeffs=(a1 ^ b1).coeffs,
+        tensorprod_ab_coeffs=(a1 * b1).coeffs,
+        # symmetrise / expand / transpose
+        symmetrise_T_coeffs=T.symmetrise().coeffs,
+        full_S_coeffs=S.full_tensor.coeffs,
+        transpose_T_coeffs=T.transpose().coeffs,
+    )
+
+    # Direct sum of a vector field space and a function space.
+    ds = dg.vector_field_space + dg.function_space
+    packed = ds.pack(X, f)
+    other = ds.pack(Y, h)
+    arrays["directsum_dim"] = np.int64(ds.dim)
+    arrays["directsum_gram"] = ds.gram
+    arrays["directsum_inner"] = np.asarray(dg.inner(packed, other))
+
+    save(outdir, "tensor_algebra", **arrays)
+
+
 def main() -> None:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
         os.path.join(_HERE, "..", "test", "fixtures"))
@@ -270,6 +378,7 @@ def main() -> None:
     gen_regularise(outdir)
     gen_diffusion_core(outdir)
     gen_weak_operators(outdir)
+    gen_tensor_algebra(outdir)
     print("done.")
 
 

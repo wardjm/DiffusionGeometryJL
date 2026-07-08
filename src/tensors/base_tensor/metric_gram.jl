@@ -19,6 +19,47 @@ function metric(u_n1::AbstractMatrix, matrices::AbstractArray{<:Any,3})
     return np_reshape(g, n, n1 * C, n1 * C)
 end
 
+@inline _expand_leading(x::AbstractArray, B::Integer) =
+    size(x, 1) == B ? x : repeat(x, outer=(B, ntuple(_ -> 1, ndims(x) - 1)...))
+
+# Apply a regularisation closure (which expects a leading point axis) to a
+# `(batch..., n)` array, transposing the point axis to the front and back.
+function _apply_regularise(f, mv::AbstractArray, batch::Tuple, n::Integer)
+    # Unbatched: give the point vector a trailing singleton axis so regularise
+    # maps (n, 1) → (n, 1) (its accumulation needs at least one pointwise column).
+    isempty(batch) && return reshape(f(reshape(mv, n, 1)), n)
+    nb = length(batch)
+    mvp = permutedims(mv, (nb + 1, ntuple(i -> i, nb)...))   # (n, batch...)
+    reg = f(mvp)
+    return permutedims(reg, (ntuple(i -> i + 1, nb)..., 1))  # (batch..., n)
+end
+
+"""
+    _metric_apply(u_n1, regularise_func, a_coeffs, b_coeffs, matrices) -> Array
+
+Pointwise metric `g(A, B)(p) = A^c(p) g_cd(p) B^d(p)` for two coefficient vectors,
+returning `(batch..., n)`. `u_n1` is `(n, n1)`; `matrices` `(n, C, C)`.
+"""
+function _metric_apply(u_n1::AbstractMatrix, regularise_func, a_coeffs, b_coeffs,
+                       matrices::AbstractArray{<:Any,3})
+    basis_count = size(u_n1, 2)
+    C = size(matrices, 2)
+    a_flat, batch_a = flatten_batch_dims(a_coeffs)
+    b_flat, batch_b = flatten_batch_dims(b_coeffs)
+    a_view = np_reshape(a_flat, size(a_flat, 1), basis_count, C)
+    b_view = np_reshape(b_flat, size(b_flat, 1), basis_count, C)
+    a_point = ein"pi,bic->bpc"(u_n1, a_view)            # (Ba, n, C)
+    b_point = ein"pi,bic->bpc"(u_n1, b_view)            # (Bb, n, C)
+    target = Base.Broadcast.broadcast_shape(batch_a, batch_b)
+    B = prod(target; init=1)
+    ap = _expand_leading(a_point, B)
+    bp = _expand_leading(b_point, B)
+    metric_vals = ein"bpc,pcd,bpd->bp"(ap, matrices, bp)   # (B, n)
+    n = size(u_n1, 1)
+    mv = np_reshape(metric_vals, target..., n)
+    return _apply_regularise(regularise_func, mv, target, n)
+end
+
 """
     gram(u_n1, matrices, measure) -> Matrix
 
