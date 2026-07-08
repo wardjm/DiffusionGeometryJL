@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""
+Parity harness: dump Python reference outputs to disk as .npz for the Julia port
+to test against. Each fixture stores the *inputs* and the reference *outputs* of a
+Python function; the Julia parity tests reload it and assert agreement.
+
+Index arrays are stored 0-based (as Python produces them). The Julia side is
+1-based, so its index/rank arrays should equal the stored array + 1. Everything
+here is deterministic (fixed seeds), so regenerating is reproducible.
+
+Usage:
+    python pyparity/gen_fixtures.py            # writes to ../test/fixtures
+    python pyparity/gen_fixtures.py OUTDIR
+
+Requires the Python `diffusion_geometry` package importable (add its repo to
+PYTHONPATH, or run from a checkout beside it).
+"""
+from __future__ import annotations
+import os
+import sys
+
+import numpy as np
+
+# Make ../../DiffusionGeometry importable if it sits beside this repo.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for cand in (
+    os.environ.get("DIFFUSION_GEOMETRY_PY", ""),
+    os.path.abspath(os.path.join(_HERE, "..", "..", "DiffusionGeometry")),
+):
+    if cand and os.path.isdir(cand) and cand not in sys.path:
+        sys.path.insert(0, cand)
+
+from diffusion_geometry.utils.basis_utils import (  # noqa: E402
+    get_symmetric_basis_indices,
+    get_wedge_basis_indices,
+    get_wedge_product_indices,
+    kp1_children_and_signs,
+    lex_rank,
+)
+from diffusion_geometry.core.diffusion.regularise import (  # noqa: E402
+    regularise_diffusion,
+    regularise_bandlimit,
+)
+
+from itertools import combinations  # noqa: E402
+
+
+def save(outdir: str, name: str, **arrays) -> None:
+    # NPZ.jl (via ZipFile) cannot read zero-element arrays, so skip fixtures whose
+    # arrays are empty. Those are trivial edge cases (k=0 basis, over-degree wedge
+    # product) and are asserted directly on the Julia side instead.
+    if any(np.asarray(a).size == 0 for a in arrays.values()):
+        print(f"  skip  {name}.npz (empty array — covered by explicit Julia test)")
+        return
+    path = os.path.join(outdir, name + ".npz")
+    np.savez(path, **arrays)
+    print(f"  wrote {name}.npz ({', '.join(arrays)})")
+
+
+def gen_basis_utils(outdir: str) -> None:
+    print("basis_utils:")
+    for d in (1, 2, 3, 4, 5):
+        save(outdir, f"sym_d{d}", idx=get_symmetric_basis_indices(d))
+        for k in range(0, d + 1):
+            save(outdir, f"wedge_basis_d{d}_k{k}", idx=get_wedge_basis_indices(d, k))
+
+    # wedge product indices
+    for d, k1, k2 in [(4, 1, 1), (4, 1, 2), (4, 2, 1), (5, 2, 2), (3, 1, 1), (4, 2, 3)]:
+        tgt, left, right, signs = get_wedge_product_indices(d, k1, k2)
+        save(outdir, f"wedgeprod_d{d}_k{k1}_{k2}",
+             target=np.asarray(tgt), left=np.asarray(left),
+             right=np.asarray(right), signs=np.asarray(signs))
+
+    # kp1 children + signs
+    for d in (3, 4, 5):
+        for k in range(1, d):
+            idx_k, idx_kp1, children, signs = kp1_children_and_signs(d, k)
+            save(outdir, f"kp1_d{d}_k{k}",
+                 idx_k=idx_k, idx_kp1=idx_kp1, children=children, signs=signs)
+
+    # lex_rank on all combinations (round-trips the basis enumeration)
+    for d in (4, 5, 6):
+        for k in range(1, d + 1):
+            idx = np.array(list(combinations(range(d), k)), dtype=np.int64)
+            save(outdir, f"lexrank_d{d}_k{k}", idx=idx, ranks=lex_rank(idx, d))
+
+
+def gen_regularise(outdir: str) -> None:
+    print("regularise:")
+    rng = np.random.default_rng(0)
+    n, k, d = 40, 6, 3
+    # random 1-based-free: nbr_indices are 0-based here
+    nbr_indices = np.stack([rng.choice(n, size=k, replace=False) for _ in range(n)])
+    kernel = rng.random((n, k))
+    kernel /= kernel.sum(axis=1, keepdims=True)  # row-stochastic
+    x2d = rng.standard_normal((n, d))
+    save(outdir, "regularise_diffusion",
+         x=x2d, kernel=kernel, nbr_indices=nbr_indices,
+         out=regularise_diffusion(x2d, kernel, nbr_indices))
+
+    n0 = 8
+    u = rng.standard_normal((n, n0))
+    measure = rng.random(n)
+    save(outdir, "regularise_bandlimit",
+         x=x2d, u=u, measure=measure,
+         out=regularise_bandlimit(x2d, u, measure))
+
+
+def main() -> None:
+    outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
+        os.path.join(_HERE, "..", "test", "fixtures"))
+    os.makedirs(outdir, exist_ok=True)
+    print(f"Writing fixtures to {outdir}")
+    gen_basis_utils(outdir)
+    gen_regularise(outdir)
+    print("done.")
+
+
+if __name__ == "__main__":
+    main()

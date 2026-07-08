@@ -1,0 +1,246 @@
+# Porting `DiffusionGeometry` (Python) → Julia: Scope & Phased Plan
+
+Source: `../DiffusionGeometry` (Python, ~8,350 LOC source + ~3,850 LOC tests).
+Target: this package (`DiffusionGeometryJ`).
+
+Implements *Computing Diffusion Geometry* (Jones & Lanners, 2026): data-driven
+calculus/geometry/topology on point clouds via heat diffusion and the carré du
+champ operator.
+
+---
+
+## 1. What the codebase actually is
+
+Two cleanly separable layers.
+
+### A. A numerical core of pure functions (~40% of LOC)
+Takes arrays, returns arrays. No classes, no state. Ports almost mechanically.
+
+- `core/diffusion/`: `knn_graph`, `markov_chain`, `build_symmetric_kernel_matrix`,
+  `compute_eigenfunction_basis`, `carre_du_champ_knn`, `carre_du_champ_graph`,
+  `gamma_compound`, `gamma_02`, `gamma_02_sym`, `regularise_diffusion`,
+  `regularise_bandlimit`.
+- `operators/differential_operators/`: `derivative_weak`, `hessian_*`,
+  `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak` — einsum-based
+  weak-form matrix builders.
+- `utils/basis_utils.py`: combinatorial index/sign generation for wedge &
+  symmetric bases.
+
+### B. An OO orchestration layer (~60%)
+Wires the core into a lazy, cached, operator-overloaded API. This is the real
+design work — and where Julia's multiple dispatch produces a *cleaner* result
+than the original.
+
+- `MarkovTriple` / `ImmersedMarkovTriple` — data container holding two
+  **callbacks** (`cdc`, `regularise`).
+- `DiffusionGeometry` — the orchestrator, with `@cached_property` / `@lru_cache`
+  accessors (`grad`, `d(k)`, `laplacian(k)`, `hessian`, `levi_civita`, …).
+- `DiffusionGeometryCache` — memoized γ-tensors.
+- Tensor algebra: `Tensor` base + `Function` / `VectorField` / `Form` /
+  `Tensor02` / `Tensor02Sym` + their spaces + `DirectSum`.
+- `LinearOperator` / `BilinearOperator` with `@` (compose), `.adjoint`,
+  `()` (apply), `.spectrum()`, `.inverse()`.
+
+---
+
+## 2. Dependency mapping — the ones that need thought
+
+| Python | Julia | Note |
+|---|---|---|
+| `opt_einsum.contract` | **`OMEinsum.jl`** for 4–5 tensor contractions (path optimization like opt_einsum); **`Tullio.jl`** for simple batched ones | Biggest translation surface — 19 files use `contract`. **NB:** if targeting Reactant (§7), express hot kernels as reshape + batched `*` + broadcast, *not* Tullio (scalar loops don't trace) |
+| `sklearn.NearestNeighbors` | `NearestNeighbors.jl` (`KDTree` / `knn`) | Already **1-based** |
+| `scipy.sparse.linalg.eigsh` | `Arpack.eigs(; which=:LM)` or `KrylovKit.eigsolve` | |
+| `scipy.sparse.coo_matrix` | `SparseArrays.sparse(I,J,V)` | |
+| `np.linalg.eigh` / `eig` | `LinearAlgebra.eigen` (`Hermitian` for `eigh`) | |
+| `np.add.at` (scatter) | plain `for` loop with `+=` (order-independent) | `carre_du_champ_graph`, `regularise` |
+| `scipy.special.comb`, `itertools.combinations` | `Combinatorics.jl` (`combinations`, `binomial`) | |
+| `@cached_property` / `@lru_cache` | mutable struct nullable fields + memo `Dict` for parametric accessors (`d(k)`) | §3 |
+| matplotlib / plotly (`visualisation.py`, 1353 LOC) | `Makie.jl` — **rewrite fresh, port last** | not a translation |
+
+---
+
+## 3. The architecture remodel (the crux)
+
+The Python class tree collapses into Julia abstract types + structs + dispatch.
+
+### Markov triple — callbacks become function-typed fields
+```julia
+struct ImmersedMarkovTriple{C,R}
+    function_basis::Matrix{Float64}   # (n, n0)
+    measure::Vector{Float64}          # (n,)
+    cdc::C                            # (f,h) -> Array   (a closure)
+    regularise::R                     # x -> x           (closure or identity)
+    immersion_coords::Matrix{Float64} # (n, d)
+    data_matrix::Union{Nothing,Matrix{Float64}}
+    n::Int; n_function_basis::Int; dim::Int
+end
+```
+The `partial(...)` closures in `from_knn_kernel` become Julia closures directly —
+a clean 1:1.
+
+### Lazy caching
+Python `@cached_property` → mutable struct with nullable fields (or a small memo
+helper). `@lru_cache` on `d(k)` / `laplacian(k)` → a `Dict{Int,LinearOperator}`
+field.
+```julia
+mutable struct DiffusionGeometry
+    triple::ImmersedMarkovTriple
+    n_coefficients::Int; rcond::Float64
+    cache::GammaCache
+    _grad::Union{Nothing,LinearOperator}
+    _d::Dict{Int,LinearOperator}
+    # ...
+end
+grad(dg) = @get! dg._grad build_grad(dg)              # memoized accessor
+d(dg, k) = get!(dg._d, k) do; build_d(dg, k) end
+```
+
+### Tensor algebra — dispatch replaces inheritance + numpy-fighting machinery
+The `__array_ufunc__` / `__array_priority__` hooks exist *only* to make numpy
+behave; Julia needs none of them.
+```julia
+abstract type AbstractTensor end
+struct VectorField{S} <: AbstractTensor
+    space::S; coeffs::Array{ComplexF64}; batch_shape
+end
+Base.:+(a::T, b::T) where {T<:AbstractTensor} = wrap(a.space, a.coeffs .+ b.coeffs)
+Base.:*(f::Function, t::AbstractTensor) = pointwise_product(f, t)  # dispatch, not isinstance
+⊼(a::Form, b::Form) = wedge(a, b)                                  # `^` → a real operator
+```
+
+### Operators
+- `L @ M` → `L ∘ M` (or `*`)
+- `L.adjoint` → `adjoint(L)` / `L'`
+- `L(x)` → make `LinearOperator` a functor: `(L::LinearOperator)(t) = ...`
+- Space `__eq__` / `__hash__` (used as `lru_cache` / dict keys) → Julia `==` / `hash`.
+
+---
+
+## 4. Cross-cutting hazards (ranked by bug-risk)
+
+1. **0-based → 1-based indexing.** Concentrated and dangerous in: `basis_utils`
+   (wedge / symmetric multi-indices, Laplace-expansion `children` / `signs`),
+   `gamma_compound` minors, `nbr_indices` gathers, `argmax` in `tune_kernel`, and
+   the `u /= u[0,0]` normalization. **Port `basis_utils` first and golden-test its
+   index arrays against Python before anything consumes them.**
+2. **The big einsums.** e.g. `derivative_weak`:
+   `contract("pI,pJri,pJrj,p,r->IJij", ...)` (5 operands). opt_einsum optimizes
+   contraction order; naive Julia blows up memory. Use **OMEinsum** for these
+   (keeps the string ~verbatim and optimizes); reserve **Tullio** for simple
+   `pki,pkj,pk->pij` shapes.
+3. **Memory layout.** numpy is row-major with the point axis `p` leading
+   (slowest). Julia is column-major. For a *faithful* first port, keep identical
+   index order and let OMEinsum/Tullio handle strides; only reorder axes (point
+   axis last) in a later optimization pass, gated by parity tests.
+4. **Complex numbers.** `.conj()`, `real_if_close`, complex eigenreturns in
+   `LinearOperator.spectrum` / `inverse` — native in Julia; just don't force
+   `Float64` too early.
+5. **Scatter (`np.add.at`)** is order-independent accumulation — a plain `for`
+   loop with `+=` is correct and fast.
+
+---
+
+## 5. Phased plan
+
+Each phase ends at a **parity gate**: run the Python function on fixed random
+input, save outputs (`.npy` / JLD2), assert Julia matches to `rtol=1e-8`
+(numerics) / exact (index arrays). The existing **~3,850 lines of pytest** are the
+spec — port the relevant tests alongside each phase.
+
+| Phase | Scope | Deliverable | Parity gate |
+|---|---|---|---|
+| **0. Skeleton** | `Project.toml`, deps, CI, `pyparity/` harness that dumps Python reference outputs to disk | Package builds, `] test` runs empty suite | Harness produces reference fixtures |
+| **1. Combinatorics + utils** | `basis_utils` (wedge/sym indices, signs, `kp1_children_and_signs`), `batch_utils`, `regularise` | Pure funcs | **Index arrays exactly match Python** (after +1 shift) |
+| **2. Diffusion core** | `diffusion_process` (knn → markov → symmetric kernel → eigenbasis), `carre_du_champ_{knn,graph}`, `gamma_compound/02/02sym` | Build a `MarkovTriple` from a point cloud | γ-tensors match on a fixed torus sample |
+| **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python |
+| **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x).grad()`-style API | `g`, `inner`, pointwise products match |
+| **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match |
+| **6. Methods + viz (optional)** | `methods/geodesics.py`, `methods/pde.py`; rewrite visualization in Makie | End-to-end examples | Notebook figures reproduce |
+
+### Recommended tracer bullet
+The vertical slice Phase 1 → 2 → minimal 4/5 needed to run
+`laplacian(0).spectrum()` on a point cloud. That exercises
+knn → markov → eigenbasis → cdc → weak matrix → gram → spectral solve — proving
+every architectural seam end-to-end before fanning out to forms, Hessians, and
+curvature.
+
+---
+
+## 6. Effort & risk
+
+- **Phases 1–3** (pure numeric core): low risk, high mechanical throughput — the
+  bulk of correctness-critical code, with a clean oracle.
+- **Phases 4–5** (the OO remodel): the design-heavy part. Risk is *architectural*,
+  not numerical — design the space/tensor/operator type hierarchy deliberately.
+- **Phase 6**: viz is a rewrite, not a port — defer or drop.
+- **Biggest single risks:** the multi-operand einsums in Phase 3 (memory blowup if
+  contracted naively) and off-by-one in Phase 1 combinatorics. Both are *contained*
+  and *golden-testable*, which is why they're front-loaded.
+
+---
+
+## 7. Backend acceleration with Reactant.jl (optional, Phase 3.5)
+
+[Reactant.jl](https://github.com/EnzymeAD/Reactant.jl) traces Julia functions
+into MLIR/StableHLO and compiles them through **XLA**, giving one code path across
+CPU / NVIDIA / AMD / Apple / TPU via `Reactant.set_default_backend(...)`, plus
+Enzyme autodiff. It operates on `ConcreteRArray` / `TracedRArray` and — like XLA —
+strongly prefers **dense arrays and static shapes**, tracing a *fixed* computation
+graph. Data-dependent control flow, scalar indexing, dynamic shapes, and sparse /
+iterative-solver library calls are where it fights you.
+
+**Verdict: use it surgically, not globally.** Good fit for the dense numerical
+kernels; wrong tool for the rest.
+
+| Layer | Reactant fit | Why |
+|---|---|---|
+| Carré du champ contractions (Phase 2) | ✅ Strong | Dense batched contractions over the point axis — XLA's sweet spot; GPU/TPU-accelerable |
+| Weak-form operator builders (Phase 3) | ✅ Strong | e.g. `contract("pI,pJri,pJrj,p,r->IJij", …)` — ideal dense XLA target |
+| kNN graph, sparse kernel assembly, `eigsh`/Arpack | ❌ Poor | Sparse + KDTree + iterative eig aren't XLA-friendly and aren't traceable; run **once** at setup — no need to accelerate |
+| Combinatorics / index arrays (Phase 1) | ❌ N/A | Dynamic, integer, tiny — keep as plain Julia |
+| OO / caching / dispatch (Phases 4–5) | ❌ N/A | You don't trace mutable structs, dict memoization, or type dispatch — trace the *kernels*, keep orchestration in normal Julia |
+
+**Rules to keep it a drop-in choice, not an architectural commitment:**
+
+1. Build everything in **plain Julia first** (the phased plan as written).
+2. Keep the numerical kernels behind a **small function boundary** and make them
+   **backend-parametric** (accept the array type / dispatch on it), so a
+   `ConcreteRArray` path can be added later without touching orchestration.
+3. **Do not use Tullio for kernels you intend to accelerate** — its scalar-indexed
+   loops don't trace. Express those as reshape + batched `*` / `batched_mul` +
+   broadcast.
+4. Only reach for Reactant if profiling shows the dense contractions dominate on
+   large point clouds (large `n`). For modest `n`, CPU BLAS is fine and the dense
+   spectral solves (LAPACK `eigen`) dominate — which Reactant doesn't help.
+5. If you want GPU with less tracing friction, plain **`CUDA.jl`** on the
+   contraction kernels is often the lower-effort win; Reactant's edge is
+   *write-once → CPU/GPU/TPU + autodiff*.
+
+Treat this as an optional **Phase 3.5** acceleration pass, gated by the same
+parity tests as Phase 3.
+
+---
+
+## Appendix: source module → target phase map
+
+| Python module | Phase |
+|---|---|
+| `utils/basis_utils.py`, `utils/batch_utils.py` | 1 |
+| `core/diffusion/regularise.py` | 1 |
+| `core/diffusion/diffusion_process.py` | 2 |
+| `core/diffusion/carre_du_champ.py` | 2 |
+| `core/diffusion/symmetric_kernel.py`, `markov_triples.py` | 2 |
+| `operators/differential_operators/derivative.py` | 3 |
+| `operators/differential_operators/hessian.py` | 3 |
+| `operators/differential_operators/laplacian.py` | 3 |
+| `operators/differential_operators/levi_civita.py` | 3 |
+| `operators/differential_operators/lie_bracket.py` | 3 |
+| `tensors/base_tensor/metric_gram.py` | 3 |
+| `utils/basis_conversions.py` | 4 |
+| `tensors/base_tensor/*`, `tensors/functions/*`, `tensors/vector_fields/*` | 4 |
+| `tensors/forms/*`, `tensors/tensor02/*`, `tensors/tensor02sym/*` | 4 |
+| `tensors/direct_sum/*` | 4 |
+| `operators/types/{linear,bilinear,direct_sum}.py` | 5 |
+| `core/geometry/{diffusion_geometry,cache,geometry_engine}.py` | 5 |
+| `methods/geodesics.py`, `methods/pde.py` | 6 |
+| `visualisation.py` | 6 (rewrite in Makie) |

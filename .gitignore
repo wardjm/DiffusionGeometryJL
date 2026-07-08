@@ -1,0 +1,8 @@
+Manifest.toml
+/docs/build/
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+.DS_Store
+__pycache__/
+*.pyc
