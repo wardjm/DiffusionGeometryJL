@@ -11,8 +11,8 @@ See [`PORTING_PLAN.md`](PORTING_PLAN.md) for scope and the phased plan.
 | Phase | Scope | State |
 |---|---|---|
 | 0. Skeleton | package, deps, CI, parity harness | ✅ done |
-| 1. Combinatorics + utils | `basis_utils`, `regularise` | 🚧 in progress (index arrays + regularise ported & parity-tested) |
-| 2. Diffusion core | knn → markov → eigenbasis, carré du champ, γ-tensors | ⬜ next |
+| 1. Combinatorics + utils | `basis_utils`, `regularise` | 🚧 index arrays + regularise ported & parity-tested (remaining: `batch_utils`, tensor-coeff expand/symmetrise) |
+| 2. Diffusion core | knn → markov → eigenbasis, carré du champ, γ-tensors | ✅ done (γ-tensors match on a torus sample; builds an `ImmersedMarkovTriple` from a point cloud) |
 | 3–6 | weak operators, tensor algebra, operators/orchestrator, methods/viz | ⬜ |
 
 The **tracer bullet** (per the plan) is the vertical slice
@@ -23,9 +23,12 @@ Phase 1's combinatorics core — the highest off-by-one bug risk — is ported f
 
 ```
 src/DiffusionGeometryJ.jl        # module entry point
-src/utils/basis_utils.jl         # wedge/symmetric indices, lex_rank, wedge products (Phase 1)
-src/core/diffusion/regularise.jl # diffusion + bandlimit regularisation (Phase 1)
-pyparity/gen_fixtures.py         # dumps Python reference outputs -> test/fixtures/*.npz
+src/utils/basis_utils.jl              # wedge/symmetric indices, lex_rank, wedge products (Phase 1)
+src/core/diffusion/regularise.jl      # diffusion + bandlimit regularisation (Phase 1)
+src/core/diffusion/diffusion_process.jl  # knn → markov → symmetric kernel → eigenbasis (Phase 2)
+src/core/diffusion/carre_du_champ.jl     # cdc + γ-tensors (Phase 2)
+src/core/diffusion/markov_triples.jl     # (Immersed)MarkovTriple + point-cloud pipeline (Phase 2)
+pyparity/gen_fixtures.py              # dumps Python reference outputs -> test/fixtures/*.npz
 test/                            # parity tests (load fixtures, assert agreement)
 ```
 

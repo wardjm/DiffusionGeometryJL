@@ -41,6 +41,18 @@ from diffusion_geometry.core.diffusion.regularise import (  # noqa: E402
     regularise_diffusion,
     regularise_bandlimit,
 )
+from diffusion_geometry.core.diffusion.diffusion_process import (  # noqa: E402
+    knn_graph,
+    markov_chain,
+    build_symmetric_kernel_matrix,
+)
+from diffusion_geometry.core.diffusion.carre_du_champ import (  # noqa: E402
+    carre_du_champ_knn,
+    gamma_compound,
+    gamma_02,
+    gamma_02_sym,
+)
+from scipy.sparse import diags  # noqa: E402
 
 from itertools import combinations  # noqa: E402
 
@@ -106,6 +118,60 @@ def gen_regularise(outdir: str) -> None:
          out=regularise_bandlimit(x2d, u, measure))
 
 
+def torus_sample(n: int, seed: int = 0, R: float = 2.0, r: float = 1.0) -> np.ndarray:
+    """Deterministic point cloud on a torus embedded in R^3."""
+    rng = np.random.default_rng(seed)
+    theta = rng.uniform(0, 2 * np.pi, n)
+    phi = rng.uniform(0, 2 * np.pi, n)
+    return np.stack([
+        (R + r * np.cos(phi)) * np.cos(theta),
+        (R + r * np.cos(phi)) * np.sin(theta),
+        r * np.sin(phi),
+    ], axis=1)
+
+
+def gen_diffusion_core(outdir: str) -> None:
+    print("diffusion_core:")
+    n, d = 60, 3
+    knn_kernel, knn_bandwidth = 20, 8
+    data = torus_sample(n)
+
+    nbr_distances, nbr_indices = knn_graph(data, knn_kernel)
+    # kNN graph parity (compared tolerantly on the Julia side).
+    save(outdir, "knn_graph",
+         data=data, nbr_distances=nbr_distances, nbr_indices=nbr_indices)
+
+    kernel, bandwidths = markov_chain(
+        nbr_distances, nbr_indices, c=0, bandwidth_variability=-0.5,
+        knn_bandwidth=knn_bandwidth)
+
+    K, row_sums = build_symmetric_kernel_matrix(kernel, nbr_indices)
+    Kd = np.asarray(K.toarray())
+
+    # Symmetric-normalised kernel eigenvalues (sign/order-independent parity of
+    # the eigenbasis machinery; the eigenvectors themselves have gauge freedom).
+    Dh = diags(row_sums ** (-1 / 2))
+    Ksym = np.asarray((Dh @ K @ Dh).toarray())
+    eigvals = np.linalg.eigvalsh(Ksym)
+
+    # γ-tensors: carré du champ of the coordinates with themselves.
+    gamma_coords = carre_du_champ_knn(
+        data, data, kernel, nbr_indices, bandwidths=bandwidths, use_mean_centres=True)
+
+    arrays = dict(
+        data=data, nbr_distances=nbr_distances, nbr_indices=nbr_indices,
+        kernel=kernel, bandwidths=bandwidths,
+        K_dense=Kd, row_sums=row_sums, eigvals=eigvals,
+        gamma_coords=gamma_coords,
+        gamma_02=gamma_02(gamma_coords),
+        gamma_02_sym=gamma_02_sym(gamma_coords),
+    )
+    for k in range(0, d + 1):
+        _, dets = gamma_compound(gamma_coords, k)
+        arrays[f"gamma_compound_det_k{k}"] = np.asarray(dets)
+    save(outdir, "diffusion_core", **arrays)
+
+
 def main() -> None:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
         os.path.join(_HERE, "..", "test", "fixtures"))
@@ -113,6 +179,7 @@ def main() -> None:
     print(f"Writing fixtures to {outdir}")
     gen_basis_utils(outdir)
     gen_regularise(outdir)
+    gen_diffusion_core(outdir)
     print("done.")
 
 
