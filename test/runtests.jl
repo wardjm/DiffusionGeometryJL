@@ -8,4 +8,5 @@ include("parity.jl")
     include("test_basis_utils.jl")
     include("test_regularise.jl")
     include("test_diffusion_core.jl")
+    include("test_weak_operators.jl")
 end

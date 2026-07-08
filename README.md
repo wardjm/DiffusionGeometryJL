@@ -8,14 +8,14 @@ See [`PORTING_PLAN.md`](PORTING_PLAN.md) for scope and the phased plan.
 
 ## Status
 
-133 parity tests green.
+147 parity tests green.
 
 | Phase | Scope | State |
 |---|---|---|
 | 0. Skeleton | package, deps, CI, parity harness | ✅ done |
 | 1. Combinatorics + utils | `basis_utils`, `regularise` | 🚧 index arrays + regularise ported & parity-tested; remaining: `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector` |
 | 2. Diffusion core | knn → markov → eigenbasis, carré du champ, γ-tensors | ✅ done; builds an `ImmersedMarkovTriple` from a point cloud (`carre_du_champ_graph` not yet ported) |
-| 3. Weak-operator builders | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita`, `lie_bracket`, `metric_gram` | ⬜ next |
+| 3. Weak-operator builders | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita`, `lie_bracket`, `metric_gram` | ✅ done; the multi-operand einsums via OMEinsum, each weak matrix matches Python |
 | 4. Spaces + tensor algebra | tensor/space types, wedge/metric/inner, `DirectSum` | ⬜ |
 | 5. Operators + orchestrator | `LinearOperator`/`BilinearOperator`, `DiffusionGeometry` | ⬜ |
 | 6. Methods + viz | geodesics, PDE, Makie visualisation | ⬜ |
@@ -23,7 +23,9 @@ See [`PORTING_PLAN.md`](PORTING_PLAN.md) for scope and the phased plan.
 The **tracer bullet** (per the plan) is the vertical slice
 `laplacian(0).spectrum()` on a point cloud, exercising every architectural seam.
 Phase 1's combinatorics core — the highest off-by-one bug risk — was ported first;
-the diffusion core (Phase 2) now runs end-to-end from a point cloud.
+the diffusion core (Phase 2) now runs end-to-end from a point cloud, and the
+weak-form operator builders (Phase 3) match the Python reference. Phase 4 (tensor
+algebra) is next.
 
 ## What works today
 
@@ -53,6 +55,9 @@ src/core/diffusion/regularise.jl          # diffusion + bandlimit regularisation
 src/core/diffusion/diffusion_process.jl   # knn → markov → symmetric kernel → eigenbasis (Phase 2)
 src/core/diffusion/carre_du_champ.jl      # cdc + γ-tensors (Phase 2)
 src/core/diffusion/markov_triples.jl      # (Immersed)MarkovTriple + point-cloud pipeline (Phase 2)
+src/utils/reshape_utils.jl                # np_reshape: numpy C-order (row-major) reshape (Phase 3)
+src/operators/differential_operators/    # derivative/hessian/laplacian/levi_civita/lie_bracket weak builders (Phase 3)
+src/tensors/base_tensor/metric_gram.jl    # metric field + Gram matrix builders (Phase 3)
 pyparity/gen_fixtures.py                  # dumps Python reference outputs → test/fixtures/*.npz
 test/                                     # parity tests (load fixtures, assert agreement)
 ```

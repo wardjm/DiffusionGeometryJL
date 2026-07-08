@@ -52,6 +52,28 @@ from diffusion_geometry.core.diffusion.carre_du_champ import (  # noqa: E402
     gamma_02,
     gamma_02_sym,
 )
+from diffusion_geometry.core.diffusion.diffusion_process import (  # noqa: E402
+    compute_eigenfunction_basis,
+)
+from diffusion_geometry.operators.differential_operators.derivative import (  # noqa: E402
+    derivative_weak,
+)
+from diffusion_geometry.operators.differential_operators.hessian import (  # noqa: E402
+    hessian_functions,
+    hessian_coords,
+    hessian_02_weak,
+    hessian_02_sym_weak,
+)
+from diffusion_geometry.operators.differential_operators.laplacian import (  # noqa: E402
+    up_delta_weak,
+)
+from diffusion_geometry.operators.differential_operators.levi_civita import (  # noqa: E402
+    levi_civita_02_weak,
+)
+from diffusion_geometry.operators.differential_operators.lie_bracket import (  # noqa: E402
+    lie_bracket_weak,
+)
+from diffusion_geometry.tensors.base_tensor.metric_gram import gram  # noqa: E402
 from scipy.sparse import diags  # noqa: E402
 
 from itertools import combinations  # noqa: E402
@@ -172,6 +194,73 @@ def gen_diffusion_core(outdir: str) -> None:
     save(outdir, "diffusion_core", **arrays)
 
 
+def gen_weak_operators(outdir: str) -> None:
+    """Phase 3: the einsum-based weak-form operator builders.
+
+    Store the *inputs* the builders consume (coordinate/mixed/function γ-tensors,
+    Hessian tensors, compound matrices/submatrices, the eigenbasis u, measure) and
+    the reference *output* matrices, so the Julia parity test targets the weak
+    builders in isolation (independent of eigenbasis gauge / cdc details, both of
+    which are covered by their own phases). kernel/nbr/bandwidths are stored too so
+    the Julia side can reconstruct the cdc closure for the builders that need it.
+    """
+    print("weak_operators:")
+    n, d = 60, 3
+    knn_kernel, knn_bandwidth = 20, 8
+    n0, n1 = 8, 4
+    data = torus_sample(n)
+
+    nbr_distances, nbr_indices = knn_graph(data, knn_kernel)
+    kernel, bandwidths = markov_chain(
+        nbr_distances, nbr_indices, c=0, bandwidth_variability=-0.5,
+        knn_bandwidth=knn_bandwidth)
+    K, row_sums = build_symmetric_kernel_matrix(kernel, nbr_indices)
+    measure = row_sums / row_sums.sum()
+    u = compute_eigenfunction_basis(K, row_sums, n0=n0)
+
+    def cdc(f, h):
+        return carre_du_champ_knn(
+            f, h, kernel, nbr_indices, bandwidths=bandwidths, use_mean_centres=True)
+
+    gamma_coords = cdc(data, data)             # (n, d, d)
+    gamma_mixed = cdc(data, u)                 # (n, d, n0)
+    gamma_functions = cdc(u, u)                # (n, n0, n0)
+
+    # Pointwise Hessian tensors.
+    hess_fn = hessian_functions(u, data, gamma_coords, gamma_mixed, cdc)  # (n, d, d, n0)
+    hess_coords = hessian_coords(data, gamma_coords, cdc)                 # (n, d, d, d)
+
+    arrays = dict(
+        data=data, kernel=kernel, nbr_indices=nbr_indices, bandwidths=bandwidths,
+        measure=measure, u=u,
+        gamma_coords=gamma_coords, gamma_mixed=gamma_mixed,
+        gamma_functions=gamma_functions,
+        hessian_functions=hess_fn, hessian_coords=hess_coords,
+        n0=np.int64(n0), n1=np.int64(n1),
+        # Outputs that do not depend on a per-degree loop.
+        hessian_02_weak=hessian_02_weak(u, hess_fn, measure, n1),
+        hessian_02_sym_weak=hessian_02_sym_weak(u, hess_fn, measure, n1),
+        levi_civita_02_weak=levi_civita_02_weak(
+            u, gamma_mixed, gamma_coords, hess_coords, measure, n1),
+        lie_bracket_weak=lie_bracket_weak(u, data, gamma_coords, measure, n1, cdc),
+        gram_02=gram(u[:, :n1], gamma_02(gamma_coords), measure),
+        gram_02_sym=gram(u[:, :n1], gamma_02_sym(gamma_coords), measure),
+    )
+
+    # Per-degree weak matrices: derivative (0 ≤ k < d) and up-Laplacian.
+    for k in range(0, d):
+        _, dets_k = gamma_compound(gamma_coords, k)
+        arrays[f"derivative_weak_k{k}"] = derivative_weak(
+            u, gamma_mixed, np.asarray(dets_k), measure, k, n1)
+
+        subs_k, comp_k = gamma_compound(gamma_coords, k)
+        arrays[f"up_delta_weak_k{k}"] = up_delta_weak(
+            gamma_functions, gamma_mixed, gamma_coords,
+            np.asarray(subs_k), np.asarray(comp_k), measure, k, n_coefficients=n1)
+
+    save(outdir, "weak_operators", **arrays)
+
+
 def main() -> None:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
         os.path.join(_HERE, "..", "test", "fixtures"))
@@ -180,6 +269,7 @@ def main() -> None:
     gen_basis_utils(outdir)
     gen_regularise(outdir)
     gen_diffusion_core(outdir)
+    gen_weak_operators(outdir)
     print("done.")
 
 

@@ -9,8 +9,9 @@ champ operator.
 
 > **Progress (2026-07-08):** Phase 0 done; Phase 1 mostly done (combinatorics +
 > regularise ported & parity-tested); Phase 2 done (diffusion core, γ-tensors
-> match on a torus sample, builds an `ImmersedMarkovTriple` from a point cloud).
-> 133 parity tests green. See the status column in §5 and the progress log in §8.
+> match on a torus sample, builds an `ImmersedMarkovTriple` from a point cloud);
+> Phase 3 done (all weak-operator builders match Python via OMEinsum).
+> 147 parity tests green. See the status column in §5 and the progress log in §8.
 
 ---
 
@@ -157,7 +158,7 @@ spec — port the relevant tests alongside each phase.
 | **0. Skeleton** | `Project.toml`, deps, CI, `pyparity/` harness that dumps Python reference outputs to disk | Package builds, `] test` runs empty suite | Harness produces reference fixtures | ✅ done |
 | **1. Combinatorics + utils** | `basis_utils` (wedge/sym indices, signs, `kp1_children_and_signs`), `batch_utils`, `regularise` | Pure funcs | **Index arrays exactly match Python** (after +1 shift) | 🚧 index fns + `regularise` done; TODO `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector` |
 | **2. Diffusion core** | `diffusion_process` (knn → markov → symmetric kernel → eigenbasis), `carre_du_champ_{knn,graph}`, `gamma_compound/02/02sym` | Build a `MarkovTriple` from a point cloud | γ-tensors match on a fixed torus sample | ✅ done (`carre_du_champ_graph` deferred — only `from_edges` needs it) |
-| **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python | ⬜ next |
+| **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python | ✅ done (OMEinsum `@ein_str`; row-major `np_reshape`) |
 | **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x).grad()`-style API | `g`, `inner`, pointwise products match | ⬜ |
 | **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match | ⬜ |
 | **6. Methods + viz (optional)** | `methods/geodesics.py`, `methods/pde.py`; rewrite visualization in Makie | End-to-end examples | Notebook figures reproduce | ⬜ |
@@ -244,6 +245,20 @@ parity tests as Phase 3.
   (`rtol 1e-8`); markov chain, symmetric kernel, and `K_sym` eigenvalues are also
   parity-tested. *Deferred:* `carre_du_champ_graph` (edge/graph path — only
   `from_edges` needs it).
+
+- **Phase 3 — done.** All weak-operator builders ported and parity-tested against
+  Python on a torus sample (`rtol 1e-8`): `derivative_weak` (k=0,1,2),
+  `hessian_functions`/`hessian_coords` (pointwise) + `hessian_02_weak` /
+  `hessian_02_sym_weak`, `up_delta_weak` (k=0,1, and the k≥2 Schur/`solve` branch),
+  `levi_civita_02_weak`, `lie_bracket_weak`, and `metric_gram`'s `gram` (+ `metric`).
+  The multi-operand einsums use **OMEinsum** (`@ein_str`, string kept ~verbatim from
+  the `opt_einsum` original). Key translation detail: the builders flatten their
+  multi-index tensors with numpy **C-order**, so a `np_reshape` helper
+  (`src/utils/reshape_utils.jl`) emulates row-major reshape (Julia's is
+  column-major) — every weak matrix is built with OMEinsum then `np_reshape`d. The
+  k≥2 up-Laplacian's batched `np.linalg.solve` is a per-`(p,J)` `lu!`/`ldiv!` loop.
+  Fixtures store the γ-tensor *inputs* + reference matrices so the gate targets the
+  weak builders in isolation (eigenbasis gauge / cdc are covered by earlier phases).
 
 **Harness conventions established** (also in `README.md`): 1-based indexing with
 the `v .+ 1` parity convention; `NPZ.jl` cannot read zero-element arrays, so the
