@@ -163,10 +163,10 @@ spec — port the relevant tests alongside each phase.
 |---|---|---|---|---|
 | **0. Skeleton** | `Project.toml`, deps, CI, `pyparity/` harness that dumps Python reference outputs to disk | Package builds, `] test` runs empty suite | Harness produces reference fixtures | ✅ done |
 | **1. Combinatorics + utils** | `basis_utils` (wedge/sym indices, signs, `kp1_children_and_signs`), `batch_utils`, `regularise` | Pure funcs | **Index arrays exactly match Python** (after +1 shift) | 🚧 index fns + `regularise` done; TODO `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector` |
-| **2. Diffusion core** | `diffusion_process` (knn → markov → symmetric kernel → eigenbasis), `carre_du_champ_{knn,graph}`, `gamma_compound/02/02sym` | Build a `MarkovTriple` from a point cloud | γ-tensors match on a fixed torus sample | ✅ done (`carre_du_champ_graph` deferred — only `from_edges` needs it) |
+| **2. Diffusion core** | `diffusion_process` (knn → markov → symmetric kernel → eigenbasis), `carre_du_champ_{knn,graph}`, `gamma_compound/02/02sym` | Build a `MarkovTriple` from a point cloud | γ-tensors match on a fixed torus sample | ✅ done (incl. `carre_du_champ_graph`) |
 | **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python | ✅ done (OMEinsum `@ein_str`; row-major `np_reshape`) |
 | **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x)`-style API | `g`, `inner`, pointwise products match | ✅ done (operator-coupled tensor methods deferred to Phase 5) |
-| **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match | ✅ done (`from_edges`/`from_graph_kernel` deferred with `carre_du_champ_graph`) |
+| **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match | ✅ done (incl. `from_edges`/`from_graph_kernel`/`from_sparse_matrix`) |
 | **6. Methods + viz (optional)** | `methods/geodesics.py`, `methods/pde.py`; rewrite visualization in Makie | End-to-end examples | Notebook figures reproduce | ⬜ |
 
 ### Recommended tracer bullet
@@ -336,6 +336,24 @@ parity tests as Phase 3.
   `visualisation.py` and pde's `gif_from_functions` are **dropped** (plotly/Makie
   rendering has no numerical parity target). *Deferred as before:* the graph path
   (`carre_du_champ_graph` → `from_edges`) and `VectorField.from_reconstruction`.
+
+- **Graph / edge path (2026-07-08):** ported the last deferred constructor path.
+  `carre_du_champ_graph` (`carre_du_champ.jl`) — the edge version of the cdc:
+  per-edge weighted outer products scatter-added to target nodes (Python's
+  `np.add.at` → order-independent `+=` loops), both the mean-centred and
+  point-centred branches. `edge_index` is `(2, num_edges)`, **1-based** (row 1
+  source `j`, row 2 target `i`). Wired into `immersed_triple_from_graph_kernel` /
+  `immersed_triple_from_edges` (`markov_triples.jl`) and the
+  `from_graph_kernel` / `from_edges` / `from_sparse_matrix` classmethods
+  (`diffusion_geometry.jl`). `from_edges` uses the row-stochastic kernel
+  `w_{ji} = 1/d(i)` with measure = in-degrees; `from_sparse_matrix` bridges a
+  `SparseMatrixCSC` (`findnz` → edges `(source=col, target=row)`). The graph path
+  carries **no regulariser / data_matrix** (matches Python) and defaults the
+  function basis to the `n×n` identity. Fixture `graph.npz` + `test/test_graph.jl`
+  (12 tests): the raw cdc (both branches), `from_graph_kernel` (measure, γ-coords,
+  Δ₀ weak + spectrum) and `from_edges` (in-degree measure, γ-coords, Δ₀ spectrum)
+  all match to rtol 1e-8. **Only remaining gap:** `VectorField.from_reconstruction`
+  (needs the quiver / `form_to_ambient_polyvector`).
 
 **Harness conventions established** (also in `README.md`): 1-based indexing with
 the `v .+ 1` parity convention; `NPZ.jl` cannot read zero-element arrays, so the

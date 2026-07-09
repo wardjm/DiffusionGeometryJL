@@ -2,6 +2,8 @@
 # Ports `markov_triples.py`, `symmetric_kernel.py`, and the `from_*` constructors
 # of `core/geometry/diffusion_geometry.py` (the parts needed to build a triple).
 
+using LinearAlgebra: I
+
 """
     MarkovTriple(function_basis, measure, cdc; regularise=identity)
 
@@ -134,4 +136,68 @@ function immersed_triple_from_point_cloud(data_matrix::AbstractMatrix;
     # matching Python's `resolve_immersion`.
     return immersed_triple_from_knn_kernel(nbr_indices, kernel, immersion_coords;
                                            bandwidths=bandwidths, data_matrix=data_matrix, kwargs...)
+end
+
+# Weighted count `out[i] = Σ_{e : idx[e]==i} weights[e]` (numpy `bincount`).
+function _bincount(idx::AbstractVector{<:Integer}, weights, n::Integer)
+    out = zeros(Float64, n)
+    @inbounds for e in eachindex(idx)
+        out[idx[e]] += weights === nothing ? 1.0 : Float64(weights[e])
+    end
+    return out
+end
+
+"""
+    immersed_triple_from_graph_kernel(edge_index, kernel, immersion_coords; kwargs...)
+
+Build an [`ImmersedMarkovTriple`] from a precomputed kernel on an arbitrary
+directed graph. `edge_index` is `(2, num_edges)` with **1-based** node indices
+(row 1 source, row 2 target); `kernel` is the length-`num_edges` weight vector.
+Mirrors `DiffusionGeometry.from_graph_kernel`.
+
+Keyword args: `bandwidths=nothing`, `measure=nothing` (defaults to the
+source-weighted degree, normalised), `function_basis=nothing` (defaults to the
+`n×n` identity), `use_mean_centres=false`.
+"""
+function immersed_triple_from_graph_kernel(edge_index::AbstractMatrix{<:Integer},
+                                           kernel::AbstractVector, immersion_coords;
+                                           bandwidths=nothing, measure=nothing,
+                                           function_basis=nothing,
+                                           use_mean_centres::Bool=false)
+    n = size(immersion_coords, 1)
+    if measure === nothing
+        measure = _bincount(view(edge_index, 1, :), kernel, n)
+        measure = measure ./ sum(measure)
+    end
+    if function_basis === nothing
+        function_basis = Matrix{Float64}(I, n, n)
+    end
+    cdc_fn = (f, h) -> carre_du_champ_graph(f, h, kernel, edge_index;
+                                            bandwidths=bandwidths, use_mean_centres=use_mean_centres)
+    # No regulariser / data_matrix on the graph path (matches Python).
+    return ImmersedMarkovTriple(function_basis, measure, cdc_fn, immersion_coords)
+end
+
+"""
+    immersed_triple_from_edges(edge_index; immersion_coords=nothing, kwargs...)
+
+Build an [`ImmersedMarkovTriple`] from a graph given only its edges, with the
+row-stochastic kernel `w_{ji} = 1/d(i)` (`d(i)` the in-degree of target `i`) and
+measure `μ(i) = d(i)`. `edge_index` is `(2, num_edges)`, **1-based** (row 1 source,
+row 2 target). Without `immersion_coords`, `n = maximum(edge_index)` and the
+immersion defaults to the `n×n` identity. Mirrors `DiffusionGeometry.from_edges`.
+"""
+function immersed_triple_from_edges(edge_index::AbstractMatrix{<:Integer};
+                                    immersion_coords=nothing, kwargs...)
+    if immersion_coords === nothing
+        n = Int(maximum(edge_index))
+        immersion_coords = Matrix{Float64}(I, n, n)
+    else
+        n = size(immersion_coords, 1)
+    end
+    target = view(edge_index, 2, :)
+    degrees = _bincount(target, nothing, n)              # in-degrees d(i)
+    edge_weights = [1.0 / degrees[target[e]] for e in eachindex(target)]
+    return immersed_triple_from_graph_kernel(edge_index, edge_weights, immersion_coords;
+                                             measure=degrees, kwargs...)
 end

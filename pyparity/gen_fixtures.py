@@ -572,6 +572,59 @@ def gen_methods(outdir: str) -> None:
          geo_dist=geo_dist, geo_v_coeffs=geo_v.coeffs)
 
 
+def gen_graph(outdir: str) -> None:
+    """Graph / edge path: `carre_du_champ_graph` and the `from_graph_kernel` /
+    `from_edges` constructors (the last deferred piece of the port).
+
+    Build a random directed graph (guaranteed in-degree ≥ 1 per node so the
+    `from_edges` 1/d(i) weights are finite), dump:
+
+      * `carre_du_champ_graph` on random (f, h) for both the mean-centred and the
+        point-centred (with bandwidths) branches;
+      * a `from_graph_kernel` geometry (measure, γ-coords, Δ₀ weak + spectrum);
+      * a `from_edges` geometry (measure = in-degrees, γ-coords, Δ₀ spectrum).
+    """
+    print("graph:")
+    from diffusion_geometry.core.diffusion.carre_du_champ import carre_du_champ_graph
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+
+    rng = np.random.default_rng(31)
+    n, d = 12, 3
+    coords = rng.standard_normal((n, d))
+
+    # Random directed graph: each target i receives m distinct incoming sources.
+    m = 4
+    srcs, tgts = [], []
+    for i in range(n):
+        choices = rng.choice([x for x in range(n) if x != i], size=m, replace=False)
+        for j in choices:
+            srcs.append(int(j))
+            tgts.append(i)
+    edge_index = np.array([srcs, tgts])          # (2, E): row 0 source j, row 1 target i
+    E = edge_index.shape[1]
+    kernel = rng.random(E) + 0.1
+    bandwidths = rng.random(n) + 0.5
+
+    f = rng.standard_normal((n, d))
+    h = rng.standard_normal((n, d))
+    cdc_mean = carre_du_champ_graph(f, h, kernel, edge_index, use_mean_centres=True)
+    cdc_point = carre_du_champ_graph(
+        f, h, kernel, edge_index, bandwidths=bandwidths, use_mean_centres=False)
+
+    dg = DiffusionGeometry.from_graph_kernel(edge_index, kernel, coords, n_coefficients=4)
+    dge = DiffusionGeometry.from_edges(edge_index, immersion_coords=coords, n_coefficients=4)
+
+    save(outdir, "graph",
+         edge_index=edge_index, kernel=kernel, bandwidths=bandwidths,
+         coords=coords, f=f, h=h, n=np.int64(n), dim=np.int64(d),
+         cdc_mean=cdc_mean, cdc_point=cdc_point,
+         gk_measure=dg.measure, gk_gamma_coords=dg.cache.gamma_coords,
+         gk_lap0_weak=dg.laplacian(0).weak,
+         gk_lap0_eigvals=dg.laplacian(0).spectrum(eigvals_only=True),
+         ed_measure=dge.measure, ed_gamma_coords=dge.cache.gamma_coords,
+         ed_lap0_eigvals=dge.laplacian(0).spectrum(eigvals_only=True))
+
+
 def main() -> None:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
         os.path.join(_HERE, "..", "test", "fixtures"))
@@ -584,6 +637,7 @@ def main() -> None:
     gen_tensor_algebra(outdir)
     gen_operators(outdir)
     gen_methods(outdir)
+    gen_graph(outdir)
     print("done.")
 
 
