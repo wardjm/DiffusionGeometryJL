@@ -1,10 +1,11 @@
 # Vector fields and their space.
 # Ports `tensors/vector_fields/vector_field_space.py` and `vector_field.py`.
 #
-# NOTE (phasing): `operator` / `__call__` (directional derivative), `to_ambient`,
-# `from_reconstruction`, `div`, and `levi_civita` require the operator layer and
-# are deferred to Phase 5. The duality map `flat` (and its inverse `sharp` on
-# forms) is pure algebra and is provided here.
+# NOTE (phasing): `operator` / `__call__` (directional derivative), `div` and
+# `levi_civita` need the operator layer and live in `operators/tensor_actions.jl`.
+# `to_ambient` and `from_reconstruction` await `form_to_ambient_polyvector`. The
+# duality map `flat` (and its inverse `sharp` on forms) is pure algebra and is
+# provided here.
 
 """Space of vector fields 𝔛(M); `dim` components per point."""
 struct VectorFieldSpace <: AbstractTensorSpace

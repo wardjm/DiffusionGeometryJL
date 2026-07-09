@@ -79,7 +79,7 @@ export from_point_cloud, from_knn_kernel, from_knn_graph,
        from_graph_kernel, from_edges, from_sparse_matrix
 export grad, d, codifferential, divergence, up_laplacian, down_laplacian, laplacian,
        hessian, lie_bracket, levi_civita, riemann_curvature, sectional_curvature
-export vf_operator, t02_operator, to_ambient
+export vf_operator, t02_operator, to_ambient, hodge_decomposition
 
 # ── Phase 6: methods (spectral PDE solver + geodesic distances) ───────────────
 include("methods/pde.jl")

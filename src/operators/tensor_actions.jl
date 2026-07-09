@@ -1,7 +1,9 @@
 # Operator-coupled tensor methods (deferred from Phase 4 to here).
 # Port of the `operator` / `__call__` / `to_ambient` methods on `VectorField` and
-# `Tensor02` that build or consume `LinearOperator`s. Kept in the Phase-5 block so
-# the operator types are already defined.
+# `Tensor02` that build or consume `LinearOperator`s, plus the differential-operator
+# methods on `ScalarFunction` / `Form` (which delegate to the `dg` accessors) and the
+# Hodge decompositions. Kept in the Phase-5 block so the operator types are already
+# defined.
 
 using OMEinsum: @ein_str
 
@@ -99,3 +101,93 @@ end
 t02_operator(S::Tensor02Sym) = t02_operator(full_tensor(S))
 (S::Tensor02Sym)(X::VectorField) = full_tensor(S)(X)
 (S::Tensor02Sym)(X::VectorField, Y::VectorField) = full_tensor(S)(X, Y)
+
+# ── Interior product: a 1-form acting on a vector field ────────────────────────
+"""
+    (ω::Form)(X) -> Array
+
+Interior product `ω(X) = g(ω♯, X)`, as pointwise values of shape `(batch..., n)`.
+Only defined for 1-forms.
+"""
+function (ω::Form)(X::VectorField)
+    @assert degree(ω) == 1 "Only 1-forms can act on vector fields."
+    dg = geometry(ω)
+    @assert X.space == vector_field_space(dg) "VectorField must live in the canonical vector field space of the same DiffusionGeometry."
+    return g(dg, ω, flat(X))
+end
+
+# ── Differential operators applied to a tensor ─────────────────────────────────
+# Each is the corresponding `dg` accessor evaluated at the tensor; the operators
+# are memoised on `dg`, so repeated calls reuse one weak matrix.
+
+"""Gradient `∇f`, a vector field."""
+grad(f::ScalarFunction) = grad(geometry(f))(f)
+
+"""Exterior derivative `df`, a 1-form."""
+d(f::ScalarFunction) = d(geometry(f), 0)(f)
+
+"""Up-Laplacian `Δ_up f = δ d f`."""
+up_laplacian(f::ScalarFunction) = up_laplacian(geometry(f), 0)(f)
+
+"""Laplacian `Δf`. On functions the down-Laplacian vanishes, so this is `Δ_up`."""
+laplacian(f::ScalarFunction) = up_laplacian(geometry(f), 0)(f)
+
+"""Hessian `Hess f`, a symmetric (0,2)-tensor."""
+hessian(f::ScalarFunction) = hessian(geometry(f))(f)
+
+"""Exterior derivative `dω : Ωᵏ → Ωᵏ⁺¹`."""
+d(ω::Form) = d(geometry(ω), degree(ω))(ω)
+
+"""Codifferential `δω : Ωᵏ → Ωᵏ⁻¹`."""
+codifferential(ω::Form) = codifferential(geometry(ω), degree(ω))(ω)
+
+"""Up-Laplacian `Δ_up ω = δ d ω`."""
+up_laplacian(ω::Form) = up_laplacian(geometry(ω), degree(ω))(ω)
+
+"""Down-Laplacian `Δ_down ω = d δ ω`."""
+down_laplacian(ω::Form) = down_laplacian(geometry(ω), degree(ω))(ω)
+
+"""Hodge Laplacian `Δω = (δd + dδ) ω`."""
+laplacian(ω::Form) = laplacian(geometry(ω), degree(ω))(ω)
+
+# ── Hodge decomposition ────────────────────────────────────────────────────────
+"""
+    hodge_decomposition(f::ScalarFunction) -> (coexact_potential, harmonic_part)
+
+Hodge decomposition of a function: `f = δβ + h` with `β = coexact_potential` a
+1-form and `h = harmonic_part`. There is no exact part, since `Ω⁻¹` is trivial.
+"""
+function hodge_decomposition(f::ScalarFunction)
+    dg = geometry(f)
+    coexact_potential = inverse(down_laplacian(dg, 1))(d(f))
+    coexact_part = codifferential(coexact_potential)
+    return coexact_potential, f - coexact_part
+end
+
+"""
+    hodge_decomposition(ω::Form) -> (exact_potential, coexact_potential, harmonic_part)
+
+Hodge decomposition of a k-form: `ω = dα + δβ + h`, where `α = exact_potential` is a
+`(k-1)`-form, `β = coexact_potential` a `(k+1)`-form, and `h = harmonic_part`. At
+top degree (`k = dim`) there is no coexact part and `coexact_potential` is `nothing`.
+
+The potentials come from spectral pseudo-inverses of the Laplacians, so they are
+determined only up to the respective kernels.
+"""
+function hodge_decomposition(ω::Form)
+    dg = geometry(ω)
+    k = degree(ω)
+    exact_potential = inverse(up_laplacian(dg, k - 1))(codifferential(ω))
+    exact_part = d(exact_potential)
+
+    if k < ambient_dim(dg)
+        coexact_potential = inverse(down_laplacian(dg, k + 1))(d(ω))
+        coexact_part = codifferential(coexact_potential)
+    else
+        coexact_potential = nothing
+        coexact_part = wrap(ω.space, zero(ω.coeffs))
+    end
+
+    harmonic_part = ω - exact_part - coexact_part
+    return exact_potential, coexact_potential, harmonic_part
+end
