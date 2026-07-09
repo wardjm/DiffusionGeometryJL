@@ -160,7 +160,7 @@ function compute_eigenfunction_basis(symmetric_kernel_matrix, row_sums; n0::Inte
     n0_eff = Int(min(max(1, n0), n))
 
     if n0_eff < n
-        vals, vecs = eigs(Symmetric(Matrix(Ksym)); nev=n0_eff, which=:LM, tol=1e-2)
+        vals, vecs = eigs(Symmetric(Ksym); nev=n0_eff, which=:LM, tol=1e-2)
         vals, vecs = real(vals), real(vecs)
     else
         E = eigen(Symmetric(Matrix(Ksym)))
