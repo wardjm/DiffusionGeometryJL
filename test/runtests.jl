@@ -14,4 +14,5 @@ include("parity.jl")
     include("test_tensor_sugar.jl")
     include("test_methods.jl")
     include("test_graph.jl")
+    include("test_notebooks.jl")
 end
