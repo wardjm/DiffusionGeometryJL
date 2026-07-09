@@ -28,6 +28,13 @@ cdc → weak matrix → Gram → spectral solve. Phase 6 adds the spectral PDE s
 feature-complete against the Python package; only `visualisation.py` is
 unported (a Makie rewrite, out of scope for the parity port).
 
+Porting turned up four bugs in the Python reference — a permutation-parity error
+that silently sign-flips ambient polyvectors of degree `k ≡ 2, 3 (mod 4)`, and three
+`AttributeError`s in code paths that had evidently never run. Where a bug has a
+numerical parity target, this port implements the correct behaviour and the fixture
+stores a corrected reference. All four are written up in
+[`docs/upstream-bugs.md`](docs/upstream-bugs.md).
+
 ## What works today
 
 ```julia
