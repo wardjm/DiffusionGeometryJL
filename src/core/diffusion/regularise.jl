@@ -20,6 +20,12 @@ function regularise_diffusion(x::AbstractArray, kernel::AbstractMatrix,
     @assert size(x, 1) == n
     ncolon = ndims(x) - 1
     out = zeros(eltype(x), size(x))
+    if ncolon == 0
+        @inbounds for p in 1:n, j in 1:k
+            out[p] += kernel[p, j] * x[nbr_indices[p, j]]
+        end
+        return out
+    end
     colons = ntuple(_ -> Colon(), ncolon)
     @inbounds for p in 1:n, j in 1:k
         w = kernel[p, j]

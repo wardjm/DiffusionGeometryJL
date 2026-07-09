@@ -128,9 +128,16 @@ def gen_regularise(outdir: str) -> None:
     kernel = rng.random((n, k))
     kernel /= kernel.sum(axis=1, keepdims=True)  # row-stochastic
     x2d = rng.standard_normal((n, d))
+    # A bare (n,) signal is a distinct code path: numpy's reshape(n, -1) promotes it
+    # to (n, 1), and callers such as `dg._regularise` on a scalar curvature field
+    # rely on that.
+    # Drawn from its own rng so adding it does not shift the stream that the
+    # regularise_bandlimit fixture below is generated from.
+    x1d = np.random.default_rng(1).standard_normal(n)
     save(outdir, "regularise_diffusion",
          x=x2d, kernel=kernel, nbr_indices=nbr_indices,
-         out=regularise_diffusion(x2d, kernel, nbr_indices))
+         out=regularise_diffusion(x2d, kernel, nbr_indices),
+         x_vec=x1d, out_vec=regularise_diffusion(x1d, kernel, nbr_indices))
 
     n0 = 8
     u = rng.standard_normal((n, n0))
@@ -140,16 +147,22 @@ def gen_regularise(outdir: str) -> None:
          out=regularise_bandlimit(x2d, u, measure))
 
 
-def torus_sample(n: int, seed: int = 0, R: float = 2.0, r: float = 1.0) -> np.ndarray:
-    """Deterministic point cloud on a torus embedded in R^3."""
+def torus_sample_angles(n: int, seed: int = 0, R: float = 2.0, r: float = 1.0):
+    """Deterministic torus point cloud in R^3, with the tube angle phi that generated it."""
     rng = np.random.default_rng(seed)
     theta = rng.uniform(0, 2 * np.pi, n)
     phi = rng.uniform(0, 2 * np.pi, n)
-    return np.stack([
+    data = np.stack([
         (R + r * np.cos(phi)) * np.cos(theta),
         (R + r * np.cos(phi)) * np.sin(theta),
         r * np.sin(phi),
     ], axis=1)
+    return data, phi
+
+
+def torus_sample(n: int, seed: int = 0, R: float = 2.0, r: float = 1.0) -> np.ndarray:
+    """Deterministic point cloud on a torus embedded in R^3."""
+    return torus_sample_angles(n, seed, R, r)[0]
 
 
 def gen_diffusion_core(outdir: str) -> None:
@@ -695,6 +708,154 @@ def gen_graph(outdir: str) -> None:
          ed_lap0_eigvals=dge.laplacian(0).spectrum(eigvals_only=True))
 
 
+# ── Notebook-scale scenarios ───────────────────────────────────────────────────
+# End-to-end pipelines lifted from the Python repo's `intro_notebooks/`. Unlike the
+# unit fixtures above, these call `from_point_cloud` on the raw data and let each
+# language build its own eigenbasis. That only works because every quantity stored
+# here is gauge-invariant: it enters and leaves via the pointwise basis, so it
+# depends on the span of the retained eigenfunctions, not on the eigenvectors.
+#
+# The span itself is only well defined when the truncation does not cut through a
+# cluster of near-degenerate eigenvalues. Symmetric point clouds (regular grids)
+# have such clusters and Arpack/eigsh then retain different subspaces; every cloud
+# below is therefore irregular, or uses the full basis.
+
+
+def disc_sample(n: int, seed: int = 0) -> np.ndarray:
+    """Irregular point cloud filling the unit disc (no symmetry ⇒ simple spectrum)."""
+    rng = np.random.default_rng(seed)
+    pts = rng.uniform(-1, 1, (n, 2))
+    return pts[np.linalg.norm(pts, axis=1) <= 1]
+
+
+def perturbed_grid(num_side: int, lim: float, noise: float, seed: int = 0) -> np.ndarray:
+    """Grid jittered enough to break the square's symmetry and split degeneracies.
+
+    The jitter is load-bearing, not cosmetic. At 16x16 with a truncation of 150, the
+    unjittered grid has 4 adjacent eigenvalue gaps below 1e-6 and a gap of 1.4e-6 at
+    the cut itself; noise=0.1 raises the gap at the cut to 3.2e-4 and leaves no
+    near-degenerate pair below it. Dropping the noise makes the retained subspace —
+    and hence the fixture — depend on which eigensolver ran.
+    """
+    rng = np.random.default_rng(seed)
+    lin = np.linspace(-lim, lim, num_side)
+    xg, yg = np.meshgrid(lin, lin)
+    data = np.column_stack([xg.ravel(), yg.ravel()])
+    return data + noise * rng.standard_normal(data.shape)
+
+
+def gen_notebook_curvature(outdir: str) -> None:
+    """`manifold_diffusion_geometry_intro.ipynb`: scalar curvature of a torus via the
+    Gauss equation, checked against the closed form 2cos(phi)/(r(R + r cos(phi)))."""
+    print("notebook_curvature:")
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+
+    R, r = 2.0, 1.0
+    data, phi = torus_sample_angles(600, seed=0, R=R, r=r)
+    true_scalar = 2 * np.cos(phi) / (r * (R + r * np.cos(phi)))
+
+    dg = DiffusionGeometry.from_point_cloud(data)
+
+    gamma = dg.cache.gamma_coords                      # (n, 3, 3) first fundamental form
+    eigenvalues, frame = np.linalg.eigh(gamma)
+    eigenvalues = eigenvalues[:, ::-1]
+    frame = frame[:, :, ::-1]
+
+    # The two leading (tangent) eigenvalues average to one on a well-resolved surface.
+    metric_scale = np.median(eigenvalues[:, :2].mean(axis=1))
+    tangent_frame = frame[:, :, :2]
+    normal_frame = frame[:, :, 2:]
+
+    # hessian[p, l, i, j] = Hess(x_l)(grad x_i, grad x_j)
+    hessian = dg.cache.hessian_coords.transpose(0, 3, 1, 2) / metric_scale**2
+
+    # Second fundamental form, then Gauss: R_ijkl = <a_ik, a_jl> - <a_jk, a_il>.
+    sff = np.einsum("pstu,psl,pti,puj->plij",
+                    hessian, normal_frame, tangent_frame, tangent_frame)
+    riemann = np.einsum("pLik,pLjl->pijkl", sff, sff)
+    riemann -= np.einsum("pLjk,pLil->pijkl", sff, sff)
+    ricci = np.einsum("pkikj->pij", riemann)
+    scalar = dg._regularise(np.einsum("pii->p", ricci))
+
+    save(outdir, "notebook_curvature",
+         data=data, gamma_coords=gamma, hessian_coords=dg.cache.hessian_coords,
+         eigenvalues=eigenvalues, metric_scale=np.float64(metric_scale),
+         scalar=scalar, true_scalar=true_scalar,
+         correlation=np.float64(np.corrcoef(scalar, true_scalar)[0, 1]))
+
+
+def gen_notebook_disc_metric(outdir: str) -> None:
+    """`2_vector_fields.ipynb`: the rotational and radial fields on a disc are
+    pointwise orthogonal, so g(rot, radial) and <rot, radial> both vanish."""
+    print("notebook_disc_metric:")
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+    from diffusion_geometry.tensors.vector_fields.vector_field import VectorField
+
+    pts = disc_sample(400, seed=0)
+    dg = DiffusionGeometry.from_point_cloud(pts, n_function_basis=100)
+
+    rot = VectorField.from_pointwise_basis(
+        np.column_stack([-pts[:, 1], pts[:, 0]]), dg)
+    radial = VectorField.from_pointwise_basis(pts.copy(), dg)
+
+    save(outdir, "notebook_disc_metric",
+         data=pts,
+         g_rot_radial=dg.g(rot, radial),
+         inner_rot_radial=np.float64(dg.inner(rot, radial)),
+         norm_rot=np.float64(rot.norm()),
+         norm_radial=np.float64(radial.norm()),
+         rot_pointwise=rot.to_pointwise_basis().reshape(dg.n, -1),
+         radial_pointwise=radial.to_pointwise_basis().reshape(dg.n, -1))
+
+
+def gen_notebook_connection(outdir: str) -> None:
+    """`6_connection_laplacian.ipynb`: vector diffusion maps, i.e. the spectrum of the
+    connection Laplacian ∇*∇ built from the Levi-Civita connection."""
+    print("notebook_connection:")
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+
+    data = torus_sample(400, seed=0)
+    dg = DiffusionGeometry.from_point_cloud(data)
+    connection = dg.levi_civita.adjoint @ dg.levi_civita
+    eigenvalues = np.asarray(connection.spectrum(eigvals_only=True))
+
+    save(outdir, "notebook_connection", data=data, eigenvalues=eigenvalues)
+
+
+def gen_notebook_hodge(outdir: str) -> None:
+    """`5_differential_operators.ipynb`: Hodge decomposition splits a superposed
+    source + vortex field into its exact, coexact and harmonic parts."""
+    print("notebook_hodge:")
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+
+    data = perturbed_grid(16, lim=4.0, noise=0.1, seed=0)
+    dg = DiffusionGeometry.from_point_cloud(data, n_function_basis=150)
+    n = dg.n
+
+    div_vf = dg.vector_field(data.copy())                                   # source
+    rot_vf = dg.vector_field(np.column_stack([-data[:, 1], data[:, 0]]))    # vortex
+    omega = (rot_vf + div_vf).flat()
+
+    exact_potential, coexact_potential, harmonic = omega.hodge_decomposition()
+    exact_part = exact_potential.d()
+    coexact_part = coexact_potential.codifferential()
+
+    pw = lambda t: np.asarray(t.to_pointwise_basis()).reshape(n, -1)
+    save(outdir, "notebook_hodge",
+         data=data,
+         omega_pointwise=pw(omega),
+         exact_pointwise=pw(exact_part),
+         coexact_pointwise=pw(coexact_part),
+         harmonic_pointwise=pw(harmonic))
+
+
+def gen_notebooks(outdir: str) -> None:
+    gen_notebook_curvature(outdir)
+    gen_notebook_disc_metric(outdir)
+    gen_notebook_connection(outdir)
+    gen_notebook_hodge(outdir)
+
+
 def main() -> None:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
         os.path.join(_HERE, "..", "test", "fixtures"))
@@ -709,6 +870,7 @@ def main() -> None:
     gen_tensor_sugar(outdir)
     gen_methods(outdir)
     gen_graph(outdir)
+    gen_notebooks(outdir)
     print("done.")
 
 
