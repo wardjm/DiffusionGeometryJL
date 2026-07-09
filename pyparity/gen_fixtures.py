@@ -460,6 +460,76 @@ def gen_operators(outdir: str) -> None:
     save(outdir, "operators", **arrays)
 
 
+def gen_tensor_sugar(outdir: str) -> None:
+    """Differential-operator methods on tensors + the Hodge decompositions.
+
+    Same torus `dg` as `gen_operators` (rebuilt gauge-for-gauge on the Julia side
+    from u / measure / regularised immersion coords). Stores the results of the
+    `Function` and `Form` differential-operator methods, the interior product of a
+    1-form with a vector field, and the Hodge decompositions of a function, a
+    1-form (k < dim: both exact and coexact parts) and a top-degree 3-form
+    (k == dim: no coexact part).
+    """
+    print("tensor_sugar:")
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+
+    n, d = 60, 3
+    knn_kernel, knn_bandwidth = 20, 8
+    n0, n1 = 8, 4
+    data = torus_sample(n)
+
+    dg = DiffusionGeometry.from_point_cloud(
+        data, n_function_basis=n0, n_coefficients=n1,
+        knn_kernel=knn_kernel, knn_bandwidth=knn_bandwidth,
+        c=0, bandwidth_variability=-0.5, regularisation_method="diffusion")
+
+    nbr_distances, nbr_indices = knn_graph(data, knn_kernel)
+    kernel, bandwidths = markov_chain(
+        nbr_distances, nbr_indices, c=0, bandwidth_variability=-0.5,
+        knn_bandwidth=knn_bandwidth)
+
+    rng = np.random.default_rng(23)
+    f_data = rng.standard_normal(n)
+    X_data = rng.standard_normal((n, d))
+    w1_data = rng.standard_normal((n, d))            # 1-form: C(3,1) = 3
+    w3_data = rng.standard_normal((n, 1))            # 3-form: C(3,3) = 1
+
+    f = dg.function(f_data)
+    X = dg.vector_field(X_data)
+    w1 = dg.form(w1_data, 1)
+    w3 = dg.form(w3_data, 3)
+
+    # Hodge decompositions. For k = dim the coexact potential is None.
+    f_co_pot, f_harm = f.hodge_decomposition()
+    w1_ex_pot, w1_co_pot, w1_harm = w1.hodge_decomposition()
+    w3_ex_pot, w3_co_pot, w3_harm = w3.hodge_decomposition()
+    assert w3_co_pot is None, "top-degree form should have no coexact potential"
+
+    arrays = dict(
+        data=data, kernel=kernel, nbr_indices=nbr_indices, bandwidths=bandwidths,
+        u=dg.function_basis, measure=dg.measure,
+        immersion_coords=dg.immersion_coords,
+        n0=np.int64(n0), n1=np.int64(n1), dim=np.int64(d),
+        f_data=f_data, X_data=X_data, w1_data=w1_data, w3_data=w3_data,
+        # Function methods
+        f_grad=f.grad().coeffs, f_d=f.d().coeffs,
+        f_up_laplacian=f.up_laplacian().coeffs, f_laplacian=f.laplacian().coeffs,
+        f_hessian=f.hessian().coeffs,
+        # Form methods (degree 1)
+        w1_d=w1.d().coeffs, w1_codiff=w1.codifferential().coeffs,
+        w1_up_laplacian=w1.up_laplacian().coeffs,
+        w1_down_laplacian=w1.down_laplacian().coeffs,
+        w1_laplacian=w1.laplacian().coeffs,
+        # interior product ω(X) → pointwise values
+        w1_of_X=w1(X),
+        # Hodge decompositions
+        f_co_pot=f_co_pot.coeffs, f_harm=f_harm.coeffs,
+        w1_ex_pot=w1_ex_pot.coeffs, w1_co_pot=w1_co_pot.coeffs, w1_harm=w1_harm.coeffs,
+        w3_ex_pot=w3_ex_pot.coeffs, w3_harm=w3_harm.coeffs,
+    )
+    save(outdir, "tensor_sugar", **arrays)
+
+
 def gen_methods(outdir: str) -> None:
     """Phase 6: the spectral PDE solver and the geodesic-distance optimisation.
 
@@ -636,6 +706,7 @@ def main() -> None:
     gen_weak_operators(outdir)
     gen_tensor_algebra(outdir)
     gen_operators(outdir)
+    gen_tensor_sugar(outdir)
     gen_methods(outdir)
     gen_graph(outdir)
     print("done.")

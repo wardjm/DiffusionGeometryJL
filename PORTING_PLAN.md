@@ -352,8 +352,27 @@ parity tests as Phase 3.
   function basis to the `n×n` identity. Fixture `graph.npz` + `test/test_graph.jl`
   (12 tests): the raw cdc (both branches), `from_graph_kernel` (measure, γ-coords,
   Δ₀ weak + spectrum) and `from_edges` (in-degree measure, γ-coords, Δ₀ spectrum)
-  all match to rtol 1e-8. **Only remaining gap:** `VectorField.from_reconstruction`
-  (needs the quiver / `form_to_ambient_polyvector`).
+  all match to rtol 1e-8.
+
+**Tensor sugar + Hodge: done (2026-07-09).** The differential-operator methods on
+tensors (`grad`/`d`/`up_laplacian`/`laplacian`/`hessian` on `ScalarFunction`;
+`d`/`codifferential`/`up_`/`down_`/`laplacian` on `Form`), the interior product
+`(ω::Form)(X)` = `g(ω, flat(X))`, and `hodge_decomposition` for both
+`ScalarFunction` (→ `(coexact_potential, harmonic)`) and `Form` (→
+`(exact_potential, coexact_potential, harmonic)`, with `coexact_potential ===
+nothing` at top degree). All live in `operators/tensor_actions.jl` and delegate to
+the memoised `dg` accessors. Fixture `tensor_sugar.npz` reuses the `gen_operators`
+torus so the Julia host rebuilds `dg` gauge-for-gauge; `test/test_tensor_sugar.jl`
+(32 tests) checks the coefficients against Python at rtol 1e-7 *and* asserts the
+decompositions reconstruct (`ω = dα + δβ + h`).
+
+**Remaining gaps:**
+- `form_to_ambient_polyvector` (`utils/basis_utils.py`) — blocks `Form.to_ambient`,
+  `VectorField.to_ambient` and `VectorField.from_reconstruction` (the quiver).
+- `wedge_operator` (`form.py`) — the `LinearOperator` form of the wedge product.
+- `operators/types/direct_sum.py` — `block` / `hstack` / `vstack`. The
+  `DirectSumSpace` / `DirectSumElement` types are ported; the block-operator
+  constructors that consume them are not.
 
 **Harness conventions established** (also in `README.md`): 1-based indexing with
 the `v .+ 1` parity convention; `NPZ.jl` cannot read zero-element arrays, so the
