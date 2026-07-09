@@ -66,6 +66,88 @@ function carre_du_champ_knn(f::AbstractArray, h::AbstractArray,
 end
 
 """
+    carre_du_champ_graph(f, h, diffusion_kernel, edge_index; bandwidths=nothing,
+                         use_mean_centres=true) -> Array
+
+Γ_p(f, h) = (1/2ρ) Cov_p(f, h) over an arbitrary directed graph. `diffusion_kernel`
+is a length-`num_edges` vector of (row-stochastic) edge weights; `edge_index` is a
+`(2, num_edges)` matrix of **1-based** node indices with row 1 the source `j` and
+row 2 the target `i` (mirrors Python's `[source; target]`). `f`, `h` have shape
+`(n, tail...)`; result has shape `(n, f_tail..., h_tail...)`.
+"""
+function carre_du_champ_graph(f::AbstractArray, h::AbstractArray,
+                              diffusion_kernel::AbstractVector,
+                              edge_index::AbstractMatrix{<:Integer};
+                              bandwidths=nothing, use_mean_centres::Bool=true)
+    n = size(f, 1)
+    num_edges = length(diffusion_kernel)
+    f_tail = size(f)[2:end]
+    h_tail = size(h)[2:end]
+    F = prod(f_tail; init=1)
+    H = prod(h_tail; init=1)
+    f_flat = reshape(f, n, F)                     # 1-D tail ⇒ layout-safe (see knn)
+    h_flat = reshape(h, n, H)
+
+    src = view(edge_index, 1, :)
+    tgt = view(edge_index, 2, :)
+
+    T = float(typeof(one(eltype(f_flat)) * one(eltype(h_flat)) * one(eltype(diffusion_kernel))))
+    diff_f = Matrix{T}(undef, num_edges, F)
+    diff_h = Matrix{T}(undef, num_edges, H)
+
+    @inbounds for a in 1:F, e in 1:num_edges
+        diff_f[e, a] = f_flat[src[e], a]
+    end
+    @inbounds for b in 1:H, e in 1:num_edges
+        diff_h[e, b] = h_flat[src[e], b]
+    end
+
+    if use_mean_centres
+        # Local means E_i[f], E_i[h] via weighted scatter-add over targets.
+        means_f = zeros(T, n, F)
+        means_h = zeros(T, n, H)
+        @inbounds for a in 1:F, e in 1:num_edges
+            means_f[tgt[e], a] += diffusion_kernel[e] * diff_f[e, a]
+        end
+        @inbounds for b in 1:H, e in 1:num_edges
+            means_h[tgt[e], b] += diffusion_kernel[e] * diff_h[e, b]
+        end
+        @inbounds for a in 1:F, e in 1:num_edges
+            diff_f[e, a] -= means_f[tgt[e], a]
+        end
+        @inbounds for b in 1:H, e in 1:num_edges
+            diff_h[e, b] -= means_h[tgt[e], b]
+        end
+    else
+        @inbounds for a in 1:F, e in 1:num_edges
+            diff_f[e, a] -= f_flat[tgt[e], a]
+        end
+        @inbounds for b in 1:H, e in 1:num_edges
+            diff_h[e, b] -= h_flat[tgt[e], b]
+        end
+    end
+
+    # Weighted outer product per edge, scatter-added to its target node.
+    cdc = zeros(T, n, F, H)
+    @inbounds for e in 1:num_edges
+        p = tgt[e]
+        w = diffusion_kernel[e]
+        for b in 1:H
+            wdh = w * diff_h[e, b]
+            for a in 1:F
+                cdc[p, a, b] += diff_f[e, a] * wdh
+            end
+        end
+    end
+
+    scale = bandwidths === nothing ? fill(2.0, n) : 2 .* bandwidths
+    @inbounds for p in 1:n
+        cdc[p, :, :] ./= scale[p]
+    end
+    return reshape(cdc, (n, f_tail..., h_tail...))
+end
+
+"""
     gamma_compound(gamma_coords, k) -> (submatrices, dets)
 
 k-th compound submatrices and their determinants per point. `gamma_coords` is

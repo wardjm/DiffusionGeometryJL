@@ -16,9 +16,10 @@ include("core/diffusion/markov_triples.jl")
 
 export knn_graph, compute_local_bandwidths, tune_kernel, markov_chain,
        build_symmetric_kernel_matrix, compute_eigenfunction_basis
-export carre_du_champ_knn, gamma_compound, gamma_02, gamma_02_sym
+export carre_du_champ_knn, carre_du_champ_graph, gamma_compound, gamma_02, gamma_02_sym
 export MarkovTriple, ImmersedMarkovTriple, cdc, regularise,
-       immersed_triple_from_knn_kernel, immersed_triple_from_point_cloud
+       immersed_triple_from_knn_kernel, immersed_triple_from_point_cloud,
+       immersed_triple_from_graph_kernel, immersed_triple_from_edges
 
 # ── Phase 3: weak-operator builders (the hard einsums) ────────────────────────
 include("operators/differential_operators/derivative.jl")
@@ -74,7 +75,8 @@ include("operators/tensor_actions.jl")
 export LinearOperator, BilinearOperator, zero_operator, identity_operator
 export weak, matrix, strong, is_self_adjoint, spectrum, inverse, real_if_close,
        partial_apply, full_apply, transpose_operator, component_shape
-export from_point_cloud, from_knn_kernel, from_knn_graph
+export from_point_cloud, from_knn_kernel, from_knn_graph,
+       from_graph_kernel, from_edges, from_sparse_matrix
 export grad, d, codifferential, divergence, up_laplacian, down_laplacian, laplacian,
        hessian, lie_bracket, levi_civita, riemann_curvature, sectional_curvature
 export vf_operator, t02_operator, to_ambient

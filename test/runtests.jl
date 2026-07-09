@@ -12,4 +12,5 @@ include("parity.jl")
     include("test_tensor_algebra.jl")
     include("test_operators.jl")
     include("test_methods.jl")
+    include("test_graph.jl")
 end

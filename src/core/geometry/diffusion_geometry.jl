@@ -10,6 +10,7 @@
 # `inner`, and norms.
 
 using LinearAlgebra: I
+import SparseArrays
 
 """
     DiffusionGeometry(triple; rcond=1e-5, n_coefficients=nothing)
@@ -83,6 +84,49 @@ eigenbasis → triple → geometry. Mirrors `DiffusionGeometry.from_point_cloud`
 function from_point_cloud(data_matrix::AbstractMatrix; rcond=1e-5, n_coefficients=nothing, kwargs...)
     triple = immersed_triple_from_point_cloud(data_matrix; kwargs...)
     return DiffusionGeometry(triple; rcond=rcond, n_coefficients=n_coefficients)
+end
+
+"""
+    from_graph_kernel(edge_index, kernel, immersion_coords; rcond=1e-5,
+                      n_coefficients=nothing, kwargs...) -> DiffusionGeometry
+
+Build from a precomputed kernel on an arbitrary directed graph. `edge_index` is
+`(2, num_edges)`, **1-based** (row 1 source, row 2 target); `kernel` the edge-weight
+vector. Extra keywords (`bandwidths`, `measure`, `function_basis`,
+`use_mean_centres`) pass through to [`immersed_triple_from_graph_kernel`].
+"""
+function from_graph_kernel(edge_index::AbstractMatrix{<:Integer}, kernel::AbstractVector,
+                           immersion_coords; rcond=1e-5, n_coefficients=nothing, kwargs...)
+    triple = immersed_triple_from_graph_kernel(edge_index, kernel, immersion_coords; kwargs...)
+    return DiffusionGeometry(triple; rcond=rcond, n_coefficients=n_coefficients)
+end
+
+"""
+    from_edges(edge_index; immersion_coords=nothing, rcond=1e-5,
+               n_coefficients=nothing, kwargs...) -> DiffusionGeometry
+
+Build from a graph given only its (1-based) `(2, num_edges)` edges, using the
+row-stochastic kernel `w_{ji} = 1/d(i)` and measure `μ(i) = d(i)`. Defers to
+[`immersed_triple_from_edges`].
+"""
+function from_edges(edge_index::AbstractMatrix{<:Integer};
+                    rcond=1e-5, n_coefficients=nothing, kwargs...)
+    triple = immersed_triple_from_edges(edge_index; kwargs...)
+    return DiffusionGeometry(triple; rcond=rcond, n_coefficients=n_coefficients)
+end
+
+"""
+    from_sparse_matrix(sparse_matrix, immersion_coords; kwargs...) -> DiffusionGeometry
+
+Bridge for graph libraries emitting sparse kernels `K[i, j]` (point `i`, neighbour
+`j`). The `(row, col) = (i, j)` entries become edges `(source=j, target=i)`, then
+[`from_graph_kernel`] takes over.
+"""
+function from_sparse_matrix(sparse_matrix::SparseArrays.AbstractSparseMatrix,
+                            immersion_coords; kwargs...)
+    rows, cols, vals = SparseArrays.findnz(sparse_matrix)
+    edge_index = permutedims(hcat(cols, rows))          # (2, nnz): row 1 = source j, row 2 = target i
+    return from_graph_kernel(edge_index, Vector{Float64}(vals), immersion_coords; kwargs...)
 end
 
 # ── Data accessors (mirror the Python @property forwarders) ────────────────────
