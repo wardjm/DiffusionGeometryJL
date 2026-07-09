@@ -856,6 +856,111 @@ def gen_notebooks(outdir: str) -> None:
     gen_notebook_hodge(outdir)
 
 
+def gen_ambient(outdir: str) -> None:
+    """The last of the port: ambient polyvectors, the wedge operator, block operators.
+
+    Same torus `dg` as `gen_operators` (rebuilt gauge-for-gauge on the Julia side
+    from u / measure / regularised immersion coords). Stores:
+
+      * `to_ambient` for a function, a 1-, 2- and 3-form, and a vector field
+        (`form_to_ambient_polyvector`);
+      * `wedge_operator(w1, l)` coefficient matrices for l = 1, 2;
+      * the weak matrices of `block` / `hstack` / `vstack` over a 2x2 grid built
+        from the Laplacian, gradient and divergence.
+
+    Two upstream defects are corrected here rather than replicated:
+
+    * `basis_utils._perm_tables` computes permutation parity over `np.tril_indices`
+      (pairs i > j), which counts *concordant* pairs rather than inversions. Since
+      #concordant = k(k-1)/2 - #inversions, every sign is multiplied by the constant
+      (-1)^(k(k-1)/2) — the identity permutation comes out as -1 for k = 2, 3. The
+      polyvector is therefore globally sign-flipped for k ≡ 2, 3 (mod 4). We undo
+      that factor below; `_assert_perm_tables_bug` fails loudly if upstream fixes it.
+    * `VectorField.from_reconstruction` has no reference here at all: it is dead code
+      (it reads a `dg.operators_engine.vector_field_to_quiver` that does not exist and
+      raises AttributeError). The Julia port implements it and gates it with a round
+      trip against `to_ambient` instead.
+    """
+    print("ambient:")
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+    from diffusion_geometry.tensors.forms.form import wedge_operator
+    from diffusion_geometry.operators.types.direct_sum import block, hstack, vstack
+    from diffusion_geometry.utils.basis_utils import _perm_tables
+
+    def _assert_perm_tables_bug(k: int) -> None:
+        """Pin the parity bug we are correcting for, so a fixed upstream is not silently un-fixed."""
+        _, perms, signs = _perm_tables(max(k, 2) + 1, k)
+        identity_sign = signs[np.all(perms == np.arange(k), axis=1)][0]
+        expected = (-1) ** (k * (k - 1) // 2)
+        assert identity_sign == expected, (
+            f"_perm_tables(k={k}) no longer has the concordant-pairs parity bug "
+            f"(identity sign {identity_sign}, expected {expected}); drop the correction below.")
+
+    def to_ambient_corrected(form) -> np.ndarray:
+        """`form.to_ambient()` with the `_perm_tables` global sign factor undone."""
+        k = form.degree
+        if k >= 2:
+            _assert_perm_tables_bug(k)
+        return ((-1) ** (k * (k - 1) // 2)) * form.to_ambient()
+
+    n, d = 60, 3
+    knn_kernel, knn_bandwidth = 20, 8
+    n0, n1 = 8, 4
+    data = torus_sample(n)
+
+    dg = DiffusionGeometry.from_point_cloud(
+        data, n_function_basis=n0, n_coefficients=n1,
+        knn_kernel=knn_kernel, knn_bandwidth=knn_bandwidth,
+        c=0, bandwidth_variability=-0.5, regularisation_method="diffusion")
+
+    nbr_distances, nbr_indices = knn_graph(data, knn_kernel)
+    kernel, bandwidths = markov_chain(
+        nbr_distances, nbr_indices, c=0, bandwidth_variability=-0.5,
+        knn_bandwidth=knn_bandwidth)
+
+    rng = np.random.default_rng(37)
+    f_data = rng.standard_normal(n)
+    X_data = rng.standard_normal((n, d))
+    w1_data = rng.standard_normal((n, d))            # C(3,1) = 3
+    w2_data = rng.standard_normal((n, 3))            # C(3,2) = 3
+    w3_data = rng.standard_normal((n, 1))            # C(3,3) = 1
+
+    f = dg.function(f_data)
+    X = dg.vector_field(X_data)
+    w1 = dg.form(w1_data, 1)
+    w2 = dg.form(w2_data, 2)
+    w3 = dg.form(w3_data, 3)
+
+    lap0 = dg.laplacian(0)
+    grad = dg.grad
+    div = dg.div
+    grad_div = grad @ div                            # VF -> A -> VF
+
+    arrays = dict(
+        data=data, kernel=kernel, nbr_indices=nbr_indices, bandwidths=bandwidths,
+        u=dg.function_basis, measure=dg.measure,
+        immersion_coords=dg.immersion_coords,
+        n0=np.int64(n0), n1=np.int64(n1), dim=np.int64(d),
+        f_data=f_data, X_data=X_data,
+        w1_data=w1_data, w2_data=w2_data, w3_data=w3_data,
+        # to_ambient: gamma_ambient itself, then each tensor type
+        gamma_ambient=np.asarray(dg.cache.gamma_ambient),
+        f_ambient=f.to_ambient(),
+        w1_ambient=to_ambient_corrected(w1),
+        w2_ambient=to_ambient_corrected(w2),
+        w3_ambient=to_ambient_corrected(w3),
+        X_ambient=to_ambient_corrected(X.flat()),
+        # wedge_operator: coefficient (strong) matrices
+        wedge_op_l1=wedge_operator(w1, 1),
+        wedge_op_l2=wedge_operator(w1, 2),
+        # block operators (weak matrices)
+        block_weak=block([[lap0, div], [grad, grad_div]]).weak,
+        hstack_weak=hstack([lap0, div]).weak,
+        vstack_weak=vstack([lap0, grad]).weak,
+    )
+    save(outdir, "ambient", **arrays)
+
+
 def main() -> None:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
         os.path.join(_HERE, "..", "test", "fixtures"))
@@ -868,6 +973,7 @@ def main() -> None:
     gen_tensor_algebra(outdir)
     gen_operators(outdir)
     gen_tensor_sugar(outdir)
+    gen_ambient(outdir)
     gen_methods(outdir)
     gen_graph(outdir)
     gen_notebooks(outdir)

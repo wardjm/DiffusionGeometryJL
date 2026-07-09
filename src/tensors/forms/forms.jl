@@ -1,11 +1,10 @@
 # Differential k-forms and their space.
 # Ports `tensors/forms/form_space.py` and `form.py`.
 #
-# NOTE (phasing): the interior product `α(X)`, `codifferential`, the Laplacians and
-# the Hodge decomposition need the operator layer and live in
-# `operators/tensor_actions.jl`. `to_ambient` awaits `form_to_ambient_polyvector`.
-# The pure algebra — the wedge product, the tensor product of 1-forms, and the
-# musical `sharp` — lives here.
+# NOTE (phasing): the interior product `α(X)`, `codifferential`, the Laplacians,
+# the Hodge decomposition, `to_ambient` and `wedge_operator` need the operator layer
+# and live in `operators/tensor_actions.jl`. The pure algebra — the wedge product,
+# the tensor product of 1-forms, and the musical `sharp` — lives here.
 
 """Space of differential k-forms Ωᵏ(M); `binomial(dim, k)` components per point."""
 struct FormSpace <: AbstractTensorSpace

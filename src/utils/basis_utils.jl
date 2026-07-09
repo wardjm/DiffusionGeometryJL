@@ -187,3 +187,44 @@ function kp1_children_and_signs(d::Integer, k::Integer)
     end
     return idx_k, idx_kp1, children, signs
 end
+
+"""
+    permutations_with_signs(k) -> (perms, signs)
+
+All `k!` permutations of `1:k`, as rows of a `(k!, k)` matrix in lexicographic
+order, together with their parities `(-1)^{inversions}`. Used to expand a k-form's
+wedge-basis coefficients into a fully antisymmetric `(d,…,d)` tensor.
+"""
+function permutations_with_signs(k::Integer)
+    k == 0 && return zeros(Int, 1, 0), Int[1]
+    P = factorial(k)
+    perms = Matrix{Int}(undef, P, k)
+    buf = zeros(Int, k)
+    used = falses(k)
+    row = 0
+    function rec(pos)
+        if pos > k
+            row += 1
+            @inbounds perms[row, :] .= buf
+            return
+        end
+        for v in 1:k
+            if !used[v]
+                used[v] = true
+                buf[pos] = v
+                rec(pos + 1)
+                used[v] = false
+            end
+        end
+    end
+    rec(1)
+    signs = Vector{Int}(undef, P)
+    @inbounds for p in 1:P
+        inv = 0
+        for i in 1:k, j in (i+1):k
+            perms[p, i] > perms[p, j] && (inv += 1)
+        end
+        signs[p] = iseven(inv) ? 1 : -1
+    end
+    return perms, signs
+end

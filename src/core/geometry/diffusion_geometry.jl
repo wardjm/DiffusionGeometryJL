@@ -171,7 +171,15 @@ end
 
 # ── Factories from pointwise data (mirror dg.function / vector_field / …) ───────
 dg_function(dg::DiffusionGeometry, data) = from_pointwise(function_space(dg), data)
-dg_vector_field(dg::DiffusionGeometry, data) = from_pointwise(vector_field_space(dg), data)
+"""
+`mode=:pullback` projects ambient components onto the diffusion basis;
+`mode=:reconstruct` least-squares fits them (the inverse of `to_ambient`).
+"""
+function dg_vector_field(dg::DiffusionGeometry, data; mode::Symbol=:pullback)
+    mode === :pullback && return from_pointwise(vector_field_space(dg), data)
+    mode === :reconstruct && return vector_field_from_reconstruction(dg, data)
+    throw(ArgumentError("mode must be :pullback or :reconstruct, got :$mode"))
+end
 dg_form(dg::DiffusionGeometry, data, degree::Integer) =
     degree == 0 ? dg_function(dg, data) : from_pointwise(form_space(dg, degree), data)
 dg_tensor02(dg::DiffusionGeometry, data) = from_pointwise(tensor02_space(dg), data)

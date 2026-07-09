@@ -6,6 +6,7 @@
 # defined.
 
 using OMEinsum: @ein_str
+import LinearAlgebra
 
 # ── VectorField as a directional-derivative operator ───────────────────────────
 """
@@ -190,4 +191,109 @@ function hodge_decomposition(ω::Form)
 
     harmonic_part = ω - exact_part - coexact_part
     return exact_potential, coexact_potential, harmonic_part
+end
+
+# ── Ambient polyvector representation of a k-form ──────────────────────────────
+# Port of `utils/basis_utils.py::form_to_ambient_polyvector`. A k-form is expanded
+# from its `binomial(d,k)` wedge-basis components into a fully antisymmetric
+# `(n, d, …, d)` tensor, then every index is raised with the ambient carré du champ
+# Γ(xᵃ, x_i), giving the signed magnitudes of its action on the ambient coordinate
+# vector fields.
+#
+# This deliberately diverges from the Python reference, which computes permutation
+# parity over `np.tril_indices` (pairs i > j) and so counts concordant pairs rather
+# than inversions. As #concordant = k(k-1)/2 - #inversions, its signs carry a spurious
+# constant (-1)^(k(k-1)/2): the identity permutation is assigned -1 for k = 2, 3, and
+# the polyvector comes out globally sign-flipped for k ≡ 2, 3 (mod 4). `permutations_with_signs`
+# counts inversions, so the identity is always +1; the parity fixture stores the
+# corrected reference (see `pyparity/gen_fixtures.py::gen_ambient`).
+
+# Expand wedge-basis coefficients `(n, C)` into an antisymmetric `(n, d, …, d)` tensor.
+function _antisymmetric_expansion(data::AbstractArray, d::Integer, k::Integer)
+    n, C = size(data)
+    combos = get_wedge_basis_indices(d, k)          # (C, k), 1-based, lexicographic
+    @assert size(combos, 1) == C "Expected $(size(combos, 1)) wedge components, got $C"
+    perms, signs = permutations_with_signs(k)
+
+    expanded = zeros(eltype(data), n, ntuple(_ -> Int(d), k)...)
+    @inbounds for c in 1:C, p in 1:size(perms, 1)
+        target = ntuple(t -> combos[c, perms[p, t]], k)
+        s = signs[p]
+        for q in 1:n
+            expanded[q, target...] = s * data[q, c]
+        end
+    end
+    return expanded
+end
+
+# Contract axis `axis` of `T` (size d) against the last axis of `gamma` (n, D, d),
+# leaving a size-D axis in the same position.
+function _raise_axis(T::AbstractArray, gamma::AbstractArray, axis::Integer)
+    nd = ndims(T)
+    perm = (1, filter(!=(axis), 2:nd)..., axis)
+    Tp = permutedims(T, perm)                       # (n, rest…, d)
+    n, D = size(gamma, 1), size(gamma, 2)
+    rest = size(Tp)[2:(nd-1)]
+    M = reshape(Tp, n, prod(rest; init=1), size(Tp, nd))
+    out = Array{promote_type(eltype(T), eltype(gamma))}(undef, n, size(M, 2), D)
+    @inbounds for q in 1:n
+        out[q, :, :] = @view(M[q, :, :]) * transpose(@view(gamma[q, :, :]))
+    end
+    return permutedims(reshape(out, n, rest..., D), invperm(collect(perm)))
+end
+
+"""
+    to_ambient(ω::Form) -> Array
+
+Ambient polyvector representation `(n, D, …, D)` (k factors of the ambient
+dimension `D`) of an unbatched k-form, obtained by raising all k indices with the
+ambient carré du champ.
+"""
+function to_ambient(ω::Form)
+    @assert isempty(batch_shape(ω)) "to_ambient only supports unbatched Form objects."
+    dg = geometry(ω)
+    k, d, n = degree(ω), ambient_dim(dg), npoints(dg)
+    gamma = gamma_ambient(dg.cache)                 # (n, D, d)
+    data = np_reshape(to_pointwise_basis(ω), n, binomial(d, k))
+    expanded = k == 1 ? data : _antisymmetric_expansion(data, d, k)
+    for r in 1:k
+        expanded = _raise_axis(expanded, gamma, 1 + r)
+    end
+    return expanded
+end
+
+"""Ambient representation of a scalar function — the pointwise values themselves."""
+to_ambient(f::ScalarFunction) = to_pointwise_basis(f)
+
+"""
+    to_ambient(X::VectorField) -> Array
+
+Ambient quiver representation `(n, D)`: the 1-form `X♭` pushed to ambient coordinates.
+"""
+to_ambient(X::VectorField) = to_ambient(flat(X))
+
+# ── Wedge product as a linear operator ─────────────────────────────────────────
+"""
+    wedge_operator(a::Form, l) -> LinearOperator
+
+The wedge product with a fixed k-form `a`, as an operator `Ωˡ(M) → Ωᵏ⁺ˡ(M)`,
+`β ↦ a ∧ β`. Built by wedging `a` against a batch of basis l-forms.
+
+(The Python reference returns the bare coefficient matrix; here it is wrapped as
+the `LinearOperator` its name promises — that matrix is `matrix(wedge_operator(a, l))`.)
+"""
+function wedge_operator(a::Form, l::Integer)
+    @assert isempty(batch_shape(a)) "wedge_operator only supports unbatched Forms."
+    dg = geometry(a)
+    k, d, n1 = degree(a), ambient_dim(dg), n_coefficients(dg)
+    @assert l >= 1 "Wedge operator requires l ≥ 1, got l=$l"
+    @assert k + l <= d "Combined degree k+l=$(k + l) exceeds the ambient dimension d=$d"
+
+    domain = form_space(dg, l)
+    m = n1 * binomial(d, l)
+    a_batched = wrap(a.space, repeat(np_reshape(a.coeffs, 1, length(a.coeffs)), m, 1))
+    b_batched = wrap(domain, Matrix{Float64}(LinearAlgebra.I, m, m))
+    W = wedge(a_batched, b_batched)                 # batch (m,), coeffs (m, n1·C_out)
+    return LinearOperator(domain, form_space(dg, k + l);
+                          strong_matrix=permutedims(W.coeffs))
 end
