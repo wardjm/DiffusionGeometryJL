@@ -8,24 +8,22 @@ See [`PORTING_PLAN.md`](PORTING_PLAN.md) for scope and the phased plan.
 
 ## Status
 
-147 parity tests green.
+212 parity tests green.
 
 | Phase | Scope | State |
 |---|---|---|
 | 0. Skeleton | package, deps, CI, parity harness | ✅ done |
-| 1. Combinatorics + utils | `basis_utils`, `regularise` | 🚧 index arrays + regularise ported & parity-tested; remaining: `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector` |
+| 1. Combinatorics + utils | `basis_utils`, `regularise` | ✅ done (index arrays, `regularise`, `batch_utils`, tensor-coeff `expand`/`symmetrise`); `form_to_ambient_polyvector` deferred (needs the quiver) |
 | 2. Diffusion core | knn → markov → eigenbasis, carré du champ, γ-tensors | ✅ done; builds an `ImmersedMarkovTriple` from a point cloud (`carre_du_champ_graph` not yet ported) |
 | 3. Weak-operator builders | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita`, `lie_bracket`, `metric_gram` | ✅ done; the multi-operand einsums via OMEinsum, each weak matrix matches Python |
-| 4. Spaces + tensor algebra | tensor/space types, wedge/metric/inner, `DirectSum` | ⬜ |
-| 5. Operators + orchestrator | `LinearOperator`/`BilinearOperator`, `DiffusionGeometry` | ⬜ |
+| 4. Spaces + tensor algebra | tensor/space types, wedge/metric/inner, `DirectSum` | ✅ done; `g`/`inner`/pointwise products, wedge/tensor products, symmetrise/expand/transpose all match |
+| 5. Operators + orchestrator | `LinearOperator`/`BilinearOperator`, `DiffusionGeometry` + `from_*` constructors | ✅ done; grad/d/codifferential/div, up-/down-/Hodge Laplacians (+ `spectrum`/`inverse`), Hessian, Levi-Civita, Lie bracket, and Riemann/sectional curvature all match |
 | 6. Methods + viz | geodesics, PDE, Makie visualisation | ⬜ |
 
-The **tracer bullet** (per the plan) is the vertical slice
-`laplacian(0).spectrum()` on a point cloud, exercising every architectural seam.
-Phase 1's combinatorics core — the highest off-by-one bug risk — was ported first;
-the diffusion core (Phase 2) now runs end-to-end from a point cloud, and the
-weak-form operator builders (Phase 3) match the Python reference. Phase 4 (tensor
-algebra) is next.
+The **tracer bullet** (per the plan) — `laplacian(0).spectrum()` on a point cloud —
+now runs end-to-end, exercising every architectural seam: knn → markov →
+eigenbasis → cdc → weak matrix → Gram → spectral solve. The graph/edge
+constructors (`from_edges`, `from_graph_kernel`) and visualisation remain.
 
 ## What works today
 
@@ -36,14 +34,20 @@ using DiffusionGeometryJ
 data = randn(200, 3)
 
 # full pipeline: kNN graph → Markov chain → symmetric kernel → eigenbasis
-triple = immersed_triple_from_point_cloud(data; knn_kernel=20, n_function_basis=32)
+dg = from_point_cloud(data; knn_kernel=20, n_function_basis=32, n_coefficients=16)
 
-triple.n, triple.dim            # (200, 3)
-triple.function_basis           # coefficient functions {φ_i}, (n, n0), φ_0 ≡ 1
-triple.measure                  # stationary measure μ, (n,)
+# Hodge Laplacian on functions and its spectrum (the tracer-bullet slice)
+Δ₀ = laplacian(dg, 0)
+evals = spectrum(Δ₀; eigvals_only=true)     # ascending; evals[1] ≈ 0
 
-# carré du champ of the coordinates with themselves → γ-tensor field (n, d, d)
-γ = cdc(triple, triple.immersion_coords, triple.immersion_coords)
+# differential operators as LinearOperators / BilinearOperators
+f  = dg_function(dg, data[:, 1])            # a scalar field from pointwise values
+∇f = grad(dg)(f)                            # VectorField
+l2_norm(∇f)                                 # global L² norm
+H  = hessian(dg)(f)                         # symmetric (0,2)-tensor
+X  = dg_vector_field(dg, randn(200, 3))
+Y  = dg_vector_field(dg, randn(200, 3))
+sectional_curvature(dg, X, Y)               # pointwise sectional curvature (n,)
 ```
 
 ## Layout
@@ -56,8 +60,11 @@ src/core/diffusion/diffusion_process.jl   # knn → markov → symmetric kernel 
 src/core/diffusion/carre_du_champ.jl      # cdc + γ-tensors (Phase 2)
 src/core/diffusion/markov_triples.jl      # (Immersed)MarkovTriple + point-cloud pipeline (Phase 2)
 src/utils/reshape_utils.jl                # np_reshape: numpy C-order (row-major) reshape (Phase 3)
-src/operators/differential_operators/    # derivative/hessian/laplacian/levi_civita/lie_bracket weak builders (Phase 3)
-src/tensors/base_tensor/metric_gram.jl    # metric field + Gram matrix builders (Phase 3)
+src/operators/differential_operators/    # weak builders (Phase 3) + DiffusionGeometry operator accessors (Phase 5)
+src/tensors/                              # spaces + tensor algebra: functions/vector fields/forms/(0,2)-tensors/direct sum (Phase 4)
+src/operators/types/                      # LinearOperator / BilinearOperator (Phase 5)
+src/operators/tensor_actions.jl           # operator-coupled tensor methods (Phase 5)
+src/core/geometry/                        # DiffusionGeometry orchestrator + γ cache (Phase 4/5)
 pyparity/gen_fixtures.py                  # dumps Python reference outputs → test/fixtures/*.npz
 test/                                     # parity tests (load fixtures, assert agreement)
 ```

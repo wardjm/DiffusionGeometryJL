@@ -29,6 +29,7 @@ mutable struct DiffusionGeometry
     _tensor02_space::Union{Nothing,AbstractTensorSpace}
     _tensor02sym_space::Union{Nothing,AbstractTensorSpace}
     _form_spaces::Dict{Int,AbstractTensorSpace}
+    _op_cache::Dict{Any,Any}                       # memoised differential operators
 end
 
 function DiffusionGeometry(triple::ImmersedMarkovTriple; rcond=1e-5, n_coefficients=nothing)
@@ -36,7 +37,52 @@ function DiffusionGeometry(triple::ImmersedMarkovTriple; rcond=1e-5, n_coefficie
     nc = n_coefficients === nothing ? n0 : min(Int(n_coefficients), n0)
     return DiffusionGeometry(triple, Float64(rcond), n0, nc, GammaCache(triple),
                              nothing, nothing, nothing, nothing,
-                             Dict{Int,AbstractTensorSpace}())
+                             Dict{Int,AbstractTensorSpace}(), Dict{Any,Any}())
+end
+
+# ── Constructors from different data sources (mirror the Python classmethods) ──
+"""
+    from_knn_kernel(nbr_indices, kernel, immersion_coords; rcond=1e-5,
+                    n_coefficients=nothing, kwargs...) -> DiffusionGeometry
+
+Build from a precomputed kernel on a neighbour graph. Extra keywords
+(`n_function_basis`, `regularisation_method`, `bandwidths`, `measure`,
+`function_basis`, `use_mean_centres`, `data_matrix`) pass through to
+[`immersed_triple_from_knn_kernel`].
+"""
+function from_knn_kernel(nbr_indices::AbstractMatrix{<:Integer}, kernel::AbstractMatrix,
+                         immersion_coords=nothing; rcond=1e-5, n_coefficients=nothing, kwargs...)
+    triple = immersed_triple_from_knn_kernel(nbr_indices, kernel, immersion_coords; kwargs...)
+    return DiffusionGeometry(triple; rcond=rcond, n_coefficients=n_coefficients)
+end
+
+"""
+    from_knn_graph(nbr_indices, nbr_distances; immersion_coords=nothing, c=0,
+                   bandwidth_variability=-0.5, knn_bandwidth=8, rcond=1e-5,
+                   n_coefficients=nothing, kwargs...) -> DiffusionGeometry
+
+Build a Markov chain from a neighbour graph, then defer to [`from_knn_kernel`].
+"""
+function from_knn_graph(nbr_indices::AbstractMatrix{<:Integer}, nbr_distances::AbstractMatrix;
+                        immersion_coords=nothing, c::Real=0, bandwidth_variability::Real=-0.5,
+                        knn_bandwidth::Integer=8, rcond=1e-5, n_coefficients=nothing, kwargs...)
+    kernel, bandwidths = markov_chain(nbr_distances, nbr_indices;
+                                      c=c, bandwidth_variability=bandwidth_variability,
+                                      knn_bandwidth=knn_bandwidth)
+    return from_knn_kernel(nbr_indices, kernel, immersion_coords;
+                           bandwidths=bandwidths, rcond=rcond,
+                           n_coefficients=n_coefficients, kwargs...)
+end
+
+"""
+    from_point_cloud(data_matrix; rcond=1e-5, n_coefficients=nothing, kwargs...) -> DiffusionGeometry
+
+Full pipeline from raw data: kNN graph → Markov chain → symmetric kernel →
+eigenbasis → triple → geometry. Mirrors `DiffusionGeometry.from_point_cloud`.
+"""
+function from_point_cloud(data_matrix::AbstractMatrix; rcond=1e-5, n_coefficients=nothing, kwargs...)
+    triple = immersed_triple_from_point_cloud(data_matrix; kwargs...)
+    return DiffusionGeometry(triple; rcond=rcond, n_coefficients=n_coefficients)
 end
 
 # ── Data accessors (mirror the Python @property forwarders) ────────────────────

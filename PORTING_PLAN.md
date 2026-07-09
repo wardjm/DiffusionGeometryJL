@@ -12,8 +12,12 @@ champ operator.
 > match on a torus sample, builds an `ImmersedMarkovTriple` from a point cloud);
 > Phase 3 done (all weak-operator builders match Python via OMEinsum);
 > Phase 4 done (spaces + tensor algebra: Gram/inner/metric, pointwise products,
-> wedge/tensor products, symmetrise/expand/transpose, direct sums all match).
-> 182 parity tests green. See the status column in §5 and the progress log in §8.
+> wedge/tensor products, symmetrise/expand/transpose, direct sums all match);
+> Phase 5 done (`LinearOperator`/`BilinearOperator`, the full operator API on
+> `DiffusionGeometry`, `from_*` constructors — grad/d/codifferential/div, the
+> Laplacians + `spectrum`/`inverse`, Hessian, Levi-Civita, Lie bracket, and
+> curvature all match the Python reference).
+> 212 parity tests green. See the status column in §5 and the progress log in §8.
 
 ---
 
@@ -162,7 +166,7 @@ spec — port the relevant tests alongside each phase.
 | **2. Diffusion core** | `diffusion_process` (knn → markov → symmetric kernel → eigenbasis), `carre_du_champ_{knn,graph}`, `gamma_compound/02/02sym` | Build a `MarkovTriple` from a point cloud | γ-tensors match on a fixed torus sample | ✅ done (`carre_du_champ_graph` deferred — only `from_edges` needs it) |
 | **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python | ✅ done (OMEinsum `@ein_str`; row-major `np_reshape`) |
 | **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x)`-style API | `g`, `inner`, pointwise products match | ✅ done (operator-coupled tensor methods deferred to Phase 5) |
-| **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match | ⬜ |
+| **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match | ✅ done (`from_edges`/`from_graph_kernel` deferred with `carre_du_champ_graph`) |
 | **6. Methods + viz (optional)** | `methods/geodesics.py`, `methods/pde.py`; rewrite visualization in Makie | End-to-end examples | Notebook figures reproduce | ⬜ |
 
 ### Recommended tracer bullet
@@ -284,6 +288,32 @@ parity tests as Phase 3.
   `levi_civita`, `lie_bracket`) and the operator-coupled tensor methods
   (`VectorField.operator`, `Tensor02` action, form interior product, `to_ambient`,
   Hodge decomposition) are deferred to Phase 5 with the `LinearOperator` layer.
+
+- **Phase 5 — done.** The operator layer and the full orchestrator API.
+  `LinearOperator` (`src/operators/types/linear.jl`) carries weak/strong matrices
+  with lazy Gram conversion, `adjoint`/`'`, arithmetic, composition (`∘`/`*`),
+  the functor call `(L)(t)`, `spectrum`, and the spectral pseudo-`inverse`;
+  `BilinearOperator` (`bilinear.jl`) adds partial/full application and
+  `transpose`. The `DiffusionGeometry` accessors (`geometry_operators.jl`) wire the
+  Phase-3 weak builders + γ cache into operators — `grad`, `d(k)`,
+  `codifferential(k)`, `divergence`, `up_/down_/laplacian(k)`, `hessian`,
+  `lie_bracket`, `levi_civita` — memoised in `dg._op_cache`, plus
+  `riemann_curvature` / `sectional_curvature`. The deferred operator-coupled tensor
+  methods (`tensor_actions.jl`) landed too: `VectorField` directional-derivative
+  operator + `X(f)`, `Tensor02` operator/bilinear action + `to_ambient`, and the
+  `Tensor02Sym` delegates. The cache gained `hessian_functions` / `hessian_coords`
+  / `gamma_ambient`. `from_point_cloud` / `from_knn_graph` / `from_knn_kernel`
+  build a `DiffusionGeometry` end-to-end; the triple constructor now regularises
+  the immersion coordinates (mirroring Python's `resolve_immersion`) so the whole
+  pipeline matches gauge-for-gauge. Fixture `operators.npz` stores Python's
+  eigenbasis + regularised immersion coords so the Julia host reconstructs the same
+  `dg` and every operator *matrix* (not just gauge invariants) matches to
+  `rtol 1e-7`; `laplacian(k).spectrum()` eigenvalues and the curvatures match too.
+  Key translation notes: `∘`/`*` replace Python `@` for composition; `real_if_close`
+  replicates numpy's tolerance; the complex-spectrum sort mirrors
+  `lexsort((imag, real, |λ|))`; the weak builders take `cdc` positionally (not a
+  keyword). *Deferred:* `from_edges`/`from_graph_kernel` (need
+  `carre_du_champ_graph`) and `VectorField.from_reconstruction` (needs the quiver).
 
 **Harness conventions established** (also in `README.md`): 1-based indexing with
 the `v .+ 1` parity convention; `NPZ.jl` cannot read zero-element arrays, so the

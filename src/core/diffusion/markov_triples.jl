@@ -70,7 +70,7 @@ Keyword args: `bandwidths`, `n_function_basis=50`, `regularisation_method="diffu
 """
 function immersed_triple_from_knn_kernel(nbr_indices::AbstractMatrix{<:Integer},
                                          kernel::AbstractMatrix,
-                                         immersion_coords::AbstractMatrix;
+                                         immersion_coords=nothing;
                                          bandwidths=nothing,
                                          n_function_basis::Integer=50,
                                          regularisation_method::AbstractString="diffusion",
@@ -100,6 +100,15 @@ function immersed_triple_from_knn_kernel(nbr_indices::AbstractMatrix{<:Integer},
     cdc_fn = (f, h) -> carre_du_champ_knn(f, h, kernel, nbr_indices;
                                           bandwidths=bandwidths, use_mean_centres=use_mean_centres)
 
+    # Resolve immersion coordinates: an explicit `immersion_coords` is used as-is,
+    # otherwise `data_matrix` is regularised (mirrors `resolve_immersion` — Python
+    # applies the regularise map to the raw data to define the immersion).
+    if immersion_coords === nothing
+        data_matrix === nothing &&
+            error("data_matrix and/or immersion_coords must be provided.")
+        immersion_coords = reg(data_matrix)
+    end
+
     return ImmersedMarkovTriple(function_basis, measure, cdc_fn, immersion_coords;
                                 data_matrix=data_matrix, regularise=reg)
 end
@@ -121,7 +130,8 @@ function immersed_triple_from_point_cloud(data_matrix::AbstractMatrix;
     kernel, bandwidths = markov_chain(nbr_distances, nbr_indices;
                                       c=c, bandwidth_variability=bandwidth_variability,
                                       knn_bandwidth=knn_bandwidth)
-    immersion_coords === nothing && (immersion_coords = data_matrix)
+    # Leave `immersion_coords === nothing` to be resolved (regularised) downstream,
+    # matching Python's `resolve_immersion`.
     return immersed_triple_from_knn_kernel(nbr_indices, kernel, immersion_coords;
                                            bandwidths=bandwidths, data_matrix=data_matrix, kwargs...)
 end

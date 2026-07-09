@@ -10,4 +10,5 @@ include("parity.jl")
     include("test_diffusion_core.jl")
     include("test_weak_operators.jl")
     include("test_tensor_algebra.jl")
+    include("test_operators.jl")
 end

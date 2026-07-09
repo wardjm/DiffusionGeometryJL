@@ -369,6 +369,97 @@ def gen_tensor_algebra(outdir: str) -> None:
     save(outdir, "tensor_algebra", **arrays)
 
 
+def gen_operators(outdir: str) -> None:
+    """Phase 5: LinearOperator / BilinearOperator + the DiffusionGeometry operator
+    accessors.
+
+    Build a Python DiffusionGeometry on the torus, dump the inputs the Julia host
+    needs to reconstruct it gauge-for-gauge (function basis u, measure, the
+    regularised immersion coords, kernel/nbr for the cdc + regularise closures,
+    n0/n1), then store reference outputs for grad / d / codifferential / div, the
+    up-/down-/Hodge Laplacians (weak matrices + a spectrum), the spectral inverse,
+    the Hessian, Levi-Civita, Lie bracket, the operator-coupled tensor actions, and
+    the Riemann / sectional curvatures. Because the Julia side uses the same u and
+    the same (regularised) immersion coordinates, every matrix matches exactly.
+    """
+    print("operators:")
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+
+    n, d = 60, 3
+    knn_kernel, knn_bandwidth = 20, 8
+    n0, n1 = 8, 4
+    data = torus_sample(n)
+
+    dg = DiffusionGeometry.from_point_cloud(
+        data, n_function_basis=n0, n_coefficients=n1,
+        knn_kernel=knn_kernel, knn_bandwidth=knn_bandwidth,
+        c=0, bandwidth_variability=-0.5, regularisation_method="diffusion")
+
+    nbr_distances, nbr_indices = knn_graph(data, knn_kernel)
+    kernel, bandwidths = markov_chain(
+        nbr_distances, nbr_indices, c=0, bandwidth_variability=-0.5,
+        knn_bandwidth=knn_bandwidth)
+
+    rng = np.random.default_rng(11)
+    f_data = rng.standard_normal(n)
+    X_data = rng.standard_normal((n, d))
+    Y_data = rng.standard_normal((n, d))
+    Z_data = rng.standard_normal((n, d))
+    W_data = rng.standard_normal((n, d))
+
+    f = dg.function(f_data)
+    X = dg.vector_field(X_data)
+    Y = dg.vector_field(Y_data)
+    Z = dg.vector_field(Z_data)
+    W = dg.vector_field(W_data)
+
+    grad = dg.grad
+    d1 = dg.d(1)
+    codiff1 = dg.codifferential(1)
+    div = dg.div
+    uplap0 = dg.up_laplacian(0)
+    uplap1 = dg.up_laplacian(1)
+    lap0 = dg.laplacian(0)
+    lap1 = dg.laplacian(1)
+    hess = dg.hessian
+    lc = dg.levi_civita
+    lb = dg.lie_bracket
+
+    lcZ = lc(Z)                       # Tensor02
+    lcZ_Y = lcZ(Y)                    # VectorField (operator form)
+    lcZ_XW = lcZ(X, W)                # ndarray (bilinear form)
+
+    arrays = dict(
+        data=data, kernel=kernel, nbr_indices=nbr_indices, bandwidths=bandwidths,
+        u=dg.function_basis, measure=dg.measure,
+        immersion_coords=dg.immersion_coords, gamma_coords=dg.cache.gamma_coords,
+        n0=np.int64(n0), n1=np.int64(n1), dim=np.int64(d),
+        f_data=f_data, X_data=X_data, Y_data=Y_data, Z_data=Z_data, W_data=W_data,
+        # first-order operators
+        grad_weak=grad.weak, grad_strong=grad.matrix, grad_adj_weak=grad.adjoint.weak,
+        d1_weak=d1.weak, codiff1_weak=codiff1.weak, div_weak=div.weak,
+        grad_f_coeffs=grad(f).coeffs,
+        # Laplacians
+        uplap0_weak=uplap0.weak, uplap1_weak=uplap1.weak,
+        lap0_weak=lap0.weak, lap1_weak=lap1.weak,
+        lap0_eigvals=lap0.spectrum(eigvals_only=True),
+        lap1_eigvals=lap1.spectrum(eigvals_only=True),
+        lap0_inv_strong=lap0.inverse().matrix,
+        lap0_self_adjoint=np.asarray(bool(lap0.is_self_adjoint)),
+        # second-order operators
+        hess_weak=hess.weak, hess_f_coeffs=hess(f).coeffs,
+        lc_weak=lc.weak, lb_weak=lb.weak,
+        # operator-coupled tensor actions
+        X_op_weak=X.operator.weak, X_f_coeffs=X(f).coeffs,
+        lcZ_coeffs=lcZ.coeffs, lcZ_Y_coeffs=lcZ_Y.coeffs, lcZ_XW=lcZ_XW,
+        lb_XY_coeffs=lb(X, Y).coeffs, lb_X_weak=lb(X).weak,
+        # curvature
+        riemann_XYXY=dg.riemann_curvature(X, Y, X, Y),
+        sectional_XY=dg.sectional_curvature(X, Y),
+    )
+    save(outdir, "operators", **arrays)
+
+
 def main() -> None:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
         os.path.join(_HERE, "..", "test", "fixtures"))
@@ -379,6 +470,7 @@ def main() -> None:
     gen_diffusion_core(outdir)
     gen_weak_operators(outdir)
     gen_tensor_algebra(outdir)
+    gen_operators(outdir)
     print("done.")
 
 

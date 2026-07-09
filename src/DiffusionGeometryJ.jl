@@ -65,6 +65,18 @@ export to_pointwise_basis, wedge, sharp, flat, symmetrise, full_tensor,
        transpose_tensor, degree
 export pack, unpack, split_coeffs
 
-# ── Later phases wire in here (operators + orchestrator). See PORTING_PLAN.md.
+# ── Phase 5: operators + orchestrator ─────────────────────────────────────────
+include("operators/types/linear.jl")
+include("operators/types/bilinear.jl")
+include("operators/differential_operators/geometry_operators.jl")
+include("operators/tensor_actions.jl")
+
+export LinearOperator, BilinearOperator, zero_operator, identity_operator
+export weak, matrix, strong, is_self_adjoint, spectrum, inverse, real_if_close,
+       partial_apply, full_apply, transpose_operator, component_shape
+export from_point_cloud, from_knn_kernel, from_knn_graph
+export grad, d, codifferential, divergence, up_laplacian, down_laplacian, laplacian,
+       hessian, lie_bracket, levi_civita, riemann_curvature, sectional_curvature
+export vf_operator, t02_operator, to_ambient
 
 end # module
