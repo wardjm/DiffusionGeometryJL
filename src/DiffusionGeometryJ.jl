@@ -79,4 +79,10 @@ export grad, d, codifferential, divergence, up_laplacian, down_laplacian, laplac
        hessian, lie_bracket, levi_civita, riemann_curvature, sectional_curvature
 export vf_operator, t02_operator, to_ambient
 
+# ── Phase 6: methods (spectral PDE solver + geodesic distances) ───────────────
+include("methods/pde.jl")
+include("methods/geodesics.jl")
+
+export solve_differential_operator, geodesic_distances_function
+
 end # module

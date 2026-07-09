@@ -184,7 +184,8 @@ curvature.
   bulk of correctness-critical code, with a clean oracle.
 - **Phases 4–5** (the OO remodel): the design-heavy part. Risk is *architectural*,
   not numerical — design the space/tensor/operator type hierarchy deliberately.
-- **Phase 6**: viz is a rewrite, not a port — defer or drop.
+- **Phase 6**: the numeric methods (`pde.py`, `geodesics.py`) port cleanly; viz is
+  a rewrite, not a port — deferred/dropped.
 - **Biggest single risks:** the multi-operand einsums in Phase 3 (memory blowup if
   contracted naively) and off-by-one in Phase 1 combinatorics. Both are *contained*
   and *golden-testable*, which is why they're front-loaded.
@@ -314,6 +315,27 @@ parity tests as Phase 3.
   `lexsort((imag, real, |λ|))`; the weak builders take `cdc` positionally (not a
   keyword). *Deferred:* `from_edges`/`from_graph_kernel` (need
   `carre_du_champ_graph`) and `VectorField.from_reconstruction` (needs the quiver).
+
+- **Phase 6 — done (numeric methods; viz dropped).** Ported the two numerical
+  methods to `src/methods/`. `solve_differential_operator` (`pde.jl`) diagonalises
+  an endomorphism and exponentiates it in its eigenbasis to evolve an initial
+  condition over `t_values`. Subtlety: the upstream reconstruction `Vᵀ diag(eᵗᵛ) V`
+  is **sensitive to each eigenvector's sign** (it inherits whatever sign LAPACK
+  returns, which isn't portable across BLAS); we canonicalise each eigenvector so
+  its largest-magnitude entry is positive (`_canonicalise_eigvec_signs!`) and the
+  fixture generator applies the same fix, so `ft_coeffs` matches to ~1e-14.
+  `geodesic_distances_function` (`geodesics.jl`) ports the cvxpy SOCP — maximise
+  the source coefficient of a correction subject to per-point 1-Lipschitz
+  constraints w.r.t. Γₓ (top-`dim` eigenpairs) — to **Convex.jl + SCS**. The
+  upstream reads `dg.cache.data_matrix` (nonexistent; it's `dg.triple.data_matrix`)
+  and `dg.cache.u` — both fixed in the port and in the inlined reference used to
+  generate the fixture (cvxpy was never even installed upstream, so the function
+  had never run). The SOCP optimum is effectively unique, so cvxpy/SCS and
+  Convex.jl/SCS agree to ~1e-12 (gated loosely at rtol/atol 1e-3 for cross-build
+  robustness). New deps: `Convex`, `SCS`, `Random`. Fixture `methods.npz`.
+  `visualisation.py` and pde's `gif_from_functions` are **dropped** (plotly/Makie
+  rendering has no numerical parity target). *Deferred as before:* the graph path
+  (`carre_du_champ_graph` → `from_edges`) and `VectorField.from_reconstruction`.
 
 **Harness conventions established** (also in `README.md`): 1-based indexing with
 the `v .+ 1` parity convention; `NPZ.jl` cannot read zero-element arrays, so the

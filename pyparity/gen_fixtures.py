@@ -460,6 +460,118 @@ def gen_operators(outdir: str) -> None:
     save(outdir, "operators", **arrays)
 
 
+def gen_methods(outdir: str) -> None:
+    """Phase 6: the spectral PDE solver and the geodesic-distance optimisation.
+
+    Build a Python DiffusionGeometry on the torus (same inputs the Julia host
+    reconstructs gauge-for-gauge, as in Phase 5), then store:
+
+      * `solve_differential_operator` on the heat operator −Δ₀ evolved from a
+        random initial condition over a few times — deterministic, so this gets a
+        tight parity target;
+      * `geodesic_distances_function` from a fixed source — a conic optimisation
+        whose optimum is solver-dependent, so the Julia side compares it under a
+        loose tolerance (and checks the source distance ≈ 0).
+    """
+    print("methods:")
+    import cvxpy as cp
+    from opt_einsum import contract
+    from diffusion_geometry.core.geometry.diffusion_geometry import DiffusionGeometry
+
+    def _canonicalise_signs(vecs):
+        """Flip each eigenvector (row) so its largest-|·| entry is positive."""
+        vecs = np.array(vecs, copy=True)
+        for k in range(vecs.shape[0]):
+            j = np.argmax(np.abs(vecs[k]))
+            if np.real(vecs[k, j]) < 0:
+                vecs[k] *= -1
+        return vecs
+
+    def solve_differential_operator(operator, initial_condition, t_values):
+        """Copy of methods.pde.solve_differential_operator with a deterministic
+        eigenvector-sign canonicalisation (the reconstruction is sign-sensitive and
+        the raw LAPACK sign is not portable). The Julia port applies the same fix."""
+        vals, vecs = operator.spectrum()
+        vecs = _canonicalise_signs(vecs.coeffs)
+        ic_eig = np.linalg.solve(vecs, initial_condition.coeffs)
+        ft_eig = np.exp(t_values[:, None] * vals) * ic_eig
+        ft = contract("ij,tj->ti", vecs, ft_eig)
+        return initial_condition.space.wrap(ft)
+
+    def geodesic_distances_function(dg, index):
+        """Corrected copy of methods.geodesics.geodesic_distances_function.
+
+        The upstream reads `dg.cache.data_matrix`, which does not exist (the data
+        lives at `dg.triple.data_matrix`); it is fixed here so the reference runs.
+        Otherwise identical (reg=False, all points, SCS solver for determinism).
+        """
+        eps = 1e-10
+        data = dg.triple.data_matrix
+        ambient_dist_pointwise = np.linalg.norm(data - data[index], axis=1)
+        ambient_dist = dg.function(ambient_dist_pointwise).coeffs
+
+        v = cp.Variable(dg.n_function_basis)
+        intrinsic_coeffs = ambient_dist + v
+
+        L_list = []
+        for p in range(dg.n):
+            Gp = dg.cache.gamma_functions[p]
+            eigvals, eigvecs = np.linalg.eigh(Gp)
+            top_d = np.argsort(eigvals)[-dg.dim:]
+            eigvals_top = np.maximum(eigvals[top_d], eps)
+            Lp = np.diag(np.sqrt(eigvals_top)) @ eigvecs[:, top_d].T
+            L_list.append(Lp)
+        constraints = [cp.norm(Lp @ intrinsic_coeffs, 2) <= 1.0 for Lp in L_list]
+        constraints.append(dg.cache.triple.function_basis[index].T @ v == 0)
+
+        problem = cp.Problem(cp.Maximize(v[0]), constraints)
+        problem.solve(solver=cp.SCS, verbose=False)
+        if problem.status not in ("optimal", "optimal_inaccurate"):
+            raise RuntimeError(f"Solver failed: {problem.status}")
+
+        v_value = np.array(v.value).ravel()
+        v_function = dg.function_space.wrap(v_value)
+        dist = ambient_dist_pointwise + v_function.to_ambient()
+        return dist, v_function
+
+    n, d = 60, 3
+    knn_kernel, knn_bandwidth = 20, 8
+    n0, n1 = 8, 4
+    data = torus_sample(n)
+
+    dg = DiffusionGeometry.from_point_cloud(
+        data, n_function_basis=n0, n_coefficients=n1,
+        knn_kernel=knn_kernel, knn_bandwidth=knn_bandwidth,
+        c=0, bandwidth_variability=-0.5, regularisation_method="diffusion")
+
+    nbr_distances, nbr_indices = knn_graph(data, knn_kernel)
+    kernel, bandwidths = markov_chain(
+        nbr_distances, nbr_indices, c=0, bandwidth_variability=-0.5,
+        knn_bandwidth=knn_bandwidth)
+
+    # --- spectral PDE solver: heat flow under the (negative) Laplacian ---
+    rng = np.random.default_rng(21)
+    ic_data = rng.standard_normal(n)
+    ic = dg.function(ic_data)
+    heat = dg.laplacian(0) * (-1.0)
+    t_values = np.array([0.0, 0.1, 0.5, 1.0])
+    ft = solve_differential_operator(heat, ic, t_values)
+
+    # --- geodesic distances from a fixed source point ---
+    source = 7  # 0-based
+    geo_dist, geo_v = geodesic_distances_function(dg, source)
+
+    save(outdir, "methods",
+         data=data, kernel=kernel, nbr_indices=nbr_indices, bandwidths=bandwidths,
+         u=dg.function_basis, measure=dg.measure,
+         immersion_coords=dg.immersion_coords, gamma_coords=dg.cache.gamma_coords,
+         n0=np.int64(n0), n1=np.int64(n1), dim=np.int64(d),
+         ic_data=ic_data, t_values=t_values,
+         heat_weak=heat.weak, ft_coeffs=ft.coeffs,
+         geo_source=np.int64(source),
+         geo_dist=geo_dist, geo_v_coeffs=geo_v.coeffs)
+
+
 def main() -> None:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
         os.path.join(_HERE, "..", "test", "fixtures"))
@@ -471,6 +583,7 @@ def main() -> None:
     gen_weak_operators(outdir)
     gen_tensor_algebra(outdir)
     gen_operators(outdir)
+    gen_methods(outdir)
     print("done.")
 
 

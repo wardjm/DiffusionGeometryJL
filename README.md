@@ -8,7 +8,7 @@ See [`PORTING_PLAN.md`](PORTING_PLAN.md) for scope and the phased plan.
 
 ## Status
 
-212 parity tests green.
+219 parity tests green.
 
 | Phase | Scope | State |
 |---|---|---|
@@ -18,12 +18,15 @@ See [`PORTING_PLAN.md`](PORTING_PLAN.md) for scope and the phased plan.
 | 3. Weak-operator builders | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita`, `lie_bracket`, `metric_gram` | ✅ done; the multi-operand einsums via OMEinsum, each weak matrix matches Python |
 | 4. Spaces + tensor algebra | tensor/space types, wedge/metric/inner, `DirectSum` | ✅ done; `g`/`inner`/pointwise products, wedge/tensor products, symmetrise/expand/transpose all match |
 | 5. Operators + orchestrator | `LinearOperator`/`BilinearOperator`, `DiffusionGeometry` + `from_*` constructors | ✅ done; grad/d/codifferential/div, up-/down-/Hodge Laplacians (+ `spectrum`/`inverse`), Hessian, Levi-Civita, Lie bracket, and Riemann/sectional curvature all match |
-| 6. Methods + viz | geodesics, PDE, Makie visualisation | ⬜ |
+| 6. Methods + viz | geodesics, PDE, Makie visualisation | ✅ numeric methods done; viz dropped |
 
 The **tracer bullet** (per the plan) — `laplacian(0).spectrum()` on a point cloud —
-now runs end-to-end, exercising every architectural seam: knn → markov →
-eigenbasis → cdc → weak matrix → Gram → spectral solve. The graph/edge
-constructors (`from_edges`, `from_graph_kernel`) and visualisation remain.
+runs end-to-end, exercising every architectural seam: knn → markov → eigenbasis →
+cdc → weak matrix → Gram → spectral solve. Phase 6 adds the spectral PDE solver
+(`solve_differential_operator`) and geodesic distances
+(`geodesic_distances_function`, a Convex.jl + SCS conic program). The graph/edge
+constructors (`from_edges`, `from_graph_kernel`) and visualisation remain
+unported (viz is a Makie rewrite, out of scope for the parity port).
 
 ## What works today
 
@@ -65,6 +68,7 @@ src/tensors/                              # spaces + tensor algebra: functions/v
 src/operators/types/                      # LinearOperator / BilinearOperator (Phase 5)
 src/operators/tensor_actions.jl           # operator-coupled tensor methods (Phase 5)
 src/core/geometry/                        # DiffusionGeometry orchestrator + γ cache (Phase 4/5)
+src/methods/                              # spectral PDE solver + geodesic distances (Phase 6)
 pyparity/gen_fixtures.py                  # dumps Python reference outputs → test/fixtures/*.npz
 test/                                     # parity tests (load fixtures, assert agreement)
 ```
