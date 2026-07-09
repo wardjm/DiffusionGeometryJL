@@ -8,13 +8,13 @@ See [`PORTING_PLAN.md`](PORTING_PLAN.md) for scope and the phased plan.
 
 ## Status
 
-219 parity tests green.
+342 parity tests green.
 
 | Phase | Scope | State |
 |---|---|---|
 | 0. Skeleton | package, deps, CI, parity harness | ✅ done |
-| 1. Combinatorics + utils | `basis_utils`, `regularise` | ✅ done (index arrays, `regularise`, `batch_utils`, tensor-coeff `expand`/`symmetrise`); `form_to_ambient_polyvector` deferred (needs the quiver) |
-| 2. Diffusion core | knn → markov → eigenbasis, carré du champ, γ-tensors | ✅ done; builds an `ImmersedMarkovTriple` from a point cloud (`carre_du_champ_graph` not yet ported) |
+| 1. Combinatorics + utils | `basis_utils`, `regularise` | ✅ done (index arrays, `regularise`, `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector`) |
+| 2. Diffusion core | knn → markov → eigenbasis, carré du champ, γ-tensors | ✅ done; builds an `ImmersedMarkovTriple` from a point cloud or a graph (`carre_du_champ_graph`) |
 | 3. Weak-operator builders | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita`, `lie_bracket`, `metric_gram` | ✅ done; the multi-operand einsums via OMEinsum, each weak matrix matches Python |
 | 4. Spaces + tensor algebra | tensor/space types, wedge/metric/inner, `DirectSum` | ✅ done; `g`/`inner`/pointwise products, wedge/tensor products, symmetrise/expand/transpose all match |
 | 5. Operators + orchestrator | `LinearOperator`/`BilinearOperator`, `DiffusionGeometry` + `from_*` constructors | ✅ done; grad/d/codifferential/div, up-/down-/Hodge Laplacians (+ `spectrum`/`inverse`), Hessian, Levi-Civita, Lie bracket, and Riemann/sectional curvature all match |
@@ -24,9 +24,9 @@ The **tracer bullet** (per the plan) — `laplacian(0).spectrum()` on a point cl
 runs end-to-end, exercising every architectural seam: knn → markov → eigenbasis →
 cdc → weak matrix → Gram → spectral solve. Phase 6 adds the spectral PDE solver
 (`solve_differential_operator`) and geodesic distances
-(`geodesic_distances_function`, a Convex.jl + SCS conic program). The graph/edge
-constructors (`from_edges`, `from_graph_kernel`) and visualisation remain
-unported (viz is a Makie rewrite, out of scope for the parity port).
+(`geodesic_distances_function`, a Convex.jl + SCS conic program). The port is
+feature-complete against the Python package; only `visualisation.py` is
+unported (a Makie rewrite, out of scope for the parity port).
 
 ## What works today
 

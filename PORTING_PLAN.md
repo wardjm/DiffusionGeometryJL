@@ -7,17 +7,16 @@ Implements *Computing Diffusion Geometry* (Jones & Lanners, 2026): data-driven
 calculus/geometry/topology on point clouds via heat diffusion and the carré du
 champ operator.
 
-> **Progress (2026-07-08):** Phase 0 done; Phase 1 mostly done (combinatorics +
-> regularise ported & parity-tested); Phase 2 done (diffusion core, γ-tensors
-> match on a torus sample, builds an `ImmersedMarkovTriple` from a point cloud);
-> Phase 3 done (all weak-operator builders match Python via OMEinsum);
-> Phase 4 done (spaces + tensor algebra: Gram/inner/metric, pointwise products,
-> wedge/tensor products, symmetrise/expand/transpose, direct sums all match);
-> Phase 5 done (`LinearOperator`/`BilinearOperator`, the full operator API on
-> `DiffusionGeometry`, `from_*` constructors — grad/d/codifferential/div, the
-> Laplacians + `spectrum`/`inverse`, Hessian, Levi-Civita, Lie bracket, and
-> curvature all match the Python reference).
-> 212 parity tests green. See the status column in §5 and the progress log in §8.
+> **Progress (2026-07-09): the port is complete.** All six phases done, plus the
+> graph/edge constructor path, the tensor differential-operator sugar and Hodge
+> decompositions, and the final block: ambient polyvectors (`to_ambient`),
+> `wedge_operator`, and the `block`/`hstack`/`vstack` block operators.
+> 342 parity tests green. Everything in the Python package is ported except
+> `visualisation.py` (dropped — a Makie rewrite, no numerical parity target) and the
+> abstract `geometry_engine.py`. Three upstream bugs were found and corrected rather
+> than replicated: two in `methods/geodesics.py` and the permutation-parity error in
+> `basis_utils._perm_tables` (§8). See the status column in §5 and the progress log
+> in §8.
 
 ---
 
@@ -162,7 +161,7 @@ spec — port the relevant tests alongside each phase.
 | Phase | Scope | Deliverable | Parity gate | Status |
 |---|---|---|---|---|
 | **0. Skeleton** | `Project.toml`, deps, CI, `pyparity/` harness that dumps Python reference outputs to disk | Package builds, `] test` runs empty suite | Harness produces reference fixtures | ✅ done |
-| **1. Combinatorics + utils** | `basis_utils` (wedge/sym indices, signs, `kp1_children_and_signs`), `batch_utils`, `regularise` | Pure funcs | **Index arrays exactly match Python** (after +1 shift) | 🚧 index fns + `regularise` done; TODO `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector` |
+| **1. Combinatorics + utils** | `basis_utils` (wedge/sym indices, signs, `kp1_children_and_signs`), `batch_utils`, `regularise` | Pure funcs | **Index arrays exactly match Python** (after +1 shift) | ✅ done (index fns, `regularise`, `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector`) |
 | **2. Diffusion core** | `diffusion_process` (knn → markov → symmetric kernel → eigenbasis), `carre_du_champ_{knn,graph}`, `gamma_compound/02/02sym` | Build a `MarkovTriple` from a point cloud | γ-tensors match on a fixed torus sample | ✅ done (incl. `carre_du_champ_graph`) |
 | **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python | ✅ done (OMEinsum `@ein_str`; row-major `np_reshape`) |
 | **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x)`-style API | `g`, `inner`, pointwise products match | ✅ done (operator-coupled tensor methods deferred to Phase 5) |
@@ -245,7 +244,7 @@ parity tests as Phase 3.
   `lex_rank`) and `regularise` (`regularise_diffusion`, `regularise_bandlimit`)
   ported and parity-tested. Index arrays match exactly under the +1 shift.
   *Remaining:* `batch_utils`, `expand_symmetric_tensor_coeffs` /
-  `symmetrise_tensor_coeffs`, `form_to_ambient_polyvector`.
+  `symmetrise_tensor_coeffs`; `form_to_ambient_polyvector` landed with the ambient block below.
 - **Phase 2 — done.** `diffusion_process`, `carre_du_champ_knn`,
   `gamma_compound/02/02sym`, and `(Immersed)MarkovTriple` +
   `immersed_triple_from_point_cloud`. The γ-tensor gate passes on a torus sample
@@ -313,8 +312,8 @@ parity tests as Phase 3.
   Key translation notes: `∘`/`*` replace Python `@` for composition; `real_if_close`
   replicates numpy's tolerance; the complex-spectrum sort mirrors
   `lexsort((imag, real, |λ|))`; the weak builders take `cdc` positionally (not a
-  keyword). *Deferred:* `from_edges`/`from_graph_kernel` (need
-  `carre_du_champ_graph`) and `VectorField.from_reconstruction` (needs the quiver).
+  keyword). *Deferred at the time:* `from_edges`/`from_graph_kernel` (need
+  `carre_du_champ_graph`) and `VectorField.from_reconstruction` — both since landed.
 
 - **Phase 6 — done (numeric methods; viz dropped).** Ported the two numerical
   methods to `src/methods/`. `solve_differential_operator` (`pde.jl`) diagonalises
@@ -334,7 +333,7 @@ parity tests as Phase 3.
   Convex.jl/SCS agree to ~1e-12 (gated loosely at rtol/atol 1e-3 for cross-build
   robustness). New deps: `Convex`, `SCS`, `Random`. Fixture `methods.npz`.
   `visualisation.py` and pde's `gif_from_functions` are **dropped** (plotly/Makie
-  rendering has no numerical parity target). *Deferred as before:* the graph path
+  rendering has no numerical parity target). *Deferred at the time:* the graph path
   (`carre_du_champ_graph` → `from_edges`) and `VectorField.from_reconstruction`.
 
 - **Graph / edge path (2026-07-08):** ported the last deferred constructor path.
@@ -366,13 +365,37 @@ torus so the Julia host rebuilds `dg` gauge-for-gauge; `test/test_tensor_sugar.j
 (32 tests) checks the coefficients against Python at rtol 1e-7 *and* asserts the
 decompositions reconstruct (`ω = dα + δβ + h`).
 
-**Remaining gaps:**
-- `form_to_ambient_polyvector` (`utils/basis_utils.py`) — blocks `Form.to_ambient`,
-  `VectorField.to_ambient` and `VectorField.from_reconstruction` (the quiver).
-- `wedge_operator` (`form.py`) — the `LinearOperator` form of the wedge product.
-- `operators/types/direct_sum.py` — `block` / `hstack` / `vstack`. The
-  `DirectSumSpace` / `DirectSumElement` types are ported; the block-operator
-  constructors that consume them are not.
+- **Ambient polyvectors, wedge operator, block operators (2026-07-09):** the last
+  gaps. `form_to_ambient_polyvector` becomes `to_ambient` on `Form` (plus the
+  one-line `ScalarFunction` and `VectorField` cases), built from
+  `permutations_with_signs` (`utils/basis_utils.jl`) and an index-at-a-time raising
+  loop rather than a dynamically-constructed einsum string. `wedge_operator` and the
+  `block` / `hstack` / `vstack` constructors (`operators/types/direct_sum.jl`) join
+  them. Fixture `ambient.npz`, `test/test_ambient.jl` (52 tests, rtol 1e-7). Suite is
+  now **342 tests**.
+  - **Two upstream defects, corrected rather than replicated** (as with
+    `methods/geodesics.py` in Phase 6):
+    1. `basis_utils._perm_tables` takes permutation parity over `np.tril_indices`
+       (pairs `i > j`), counting *concordant* pairs instead of inversions. Since
+       #concordant = k(k-1)/2 − #inversions, every sign picks up a constant
+       `(-1)^(k(k-1)/2)`: the identity permutation is assigned −1 for k = 2, 3, so
+       `form_to_ambient_polyvector` is globally sign-flipped for k ≡ 2, 3 (mod 4).
+       `gen_ambient` undoes the factor and asserts the bug still exists, so the
+       fixture fails loudly if upstream fixes it. `_perm_tables` has no other caller.
+    2. `VectorField.from_reconstruction` is dead code — it reads
+       `dg.operators_engine.vector_field_to_quiver`, and neither the attribute nor
+       the map exists anywhere in the Python tree (it raises `AttributeError`). The
+       missing map is the Jacobian of `to_ambient`,
+       `A[(p,a),(k,i)] = Γ_ambient[p,a,i]·u[p,k]`; the Julia port builds it as
+       `vector_field_to_quiver` and least-squares inverts it. Having no reference to
+       compare against, it is gated by a round trip against `to_ambient` instead of a
+       fixture, and is reachable as `dg_vector_field(dg, data; mode=:reconstruct)`.
+  - `wedge_operator` returns a `LinearOperator` (the Python function returns the bare
+    coefficient matrix, which is `matrix(wedge_operator(a, l))`).
+
+**Remaining gaps:** none. Only `visualisation.py` (dropped: a Makie rewrite, no
+numerical parity target) and `geometry_engine.py` (an abstract base whose body only
+sets `self.xp = numpy`) are excluded.
 
 **Harness conventions established** (also in `README.md`): 1-based indexing with
 the `v .+ 1` parity convention; `NPZ.jl` cannot read zero-element arrays, so the

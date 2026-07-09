@@ -6,7 +6,8 @@ include("utils/reshape_utils.jl")
 include("core/diffusion/regularise.jl")
 
 export get_symmetric_basis_indices, get_wedge_basis_indices,
-       get_wedge_product_indices, kp1_children_and_signs, lex_rank
+       get_wedge_product_indices, kp1_children_and_signs, lex_rank,
+       permutations_with_signs
 export regularise_diffusion, regularise_bandlimit
 
 # ── Phase 2: diffusion core ───────────────────────────────────────────────────
@@ -50,7 +51,8 @@ include("tensors/direct_sum/direct_sum.jl")
 include("tensors/base_tensor/base_tensor.jl")
 
 export compatible_batches, expand_symmetric_tensor_coeffs, symmetrise_tensor_coeffs
-export GammaCache, gamma_coords, gamma_functions, gamma_mixed, gamma_coords_compound
+export GammaCache, gamma_coords, gamma_functions, gamma_mixed, gamma_coords_compound,
+       gamma_ambient
 export DiffusionGeometry, npoints, ambient_dim, n_coefficients, n_function_basis,
        function_basis, measure, immersion_coords
 export function_space, vector_field_space, form_space, tensor02_space, tensor02sym_space
@@ -69,6 +71,7 @@ export pack, unpack, split_coeffs
 # ── Phase 5: operators + orchestrator ─────────────────────────────────────────
 include("operators/types/linear.jl")
 include("operators/types/bilinear.jl")
+include("operators/types/direct_sum.jl")
 include("operators/differential_operators/geometry_operators.jl")
 include("operators/tensor_actions.jl")
 
@@ -79,7 +82,9 @@ export from_point_cloud, from_knn_kernel, from_knn_graph,
        from_graph_kernel, from_edges, from_sparse_matrix
 export grad, d, codifferential, divergence, up_laplacian, down_laplacian, laplacian,
        hessian, lie_bracket, levi_civita, riemann_curvature, sectional_curvature
-export vf_operator, t02_operator, to_ambient, hodge_decomposition
+export vf_operator, t02_operator, to_ambient, hodge_decomposition, wedge_operator
+export block, hstack, vstack
+export vector_field_to_quiver, vector_field_from_reconstruction
 
 # ── Phase 6: methods (spectral PDE solver + geodesic distances) ───────────────
 include("methods/pde.jl")
