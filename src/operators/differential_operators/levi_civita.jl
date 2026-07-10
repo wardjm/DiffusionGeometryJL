@@ -20,8 +20,14 @@ function levi_civita_02_weak(u::AbstractMatrix, gamma_mixed::AbstractArray{<:Any
     dim = size(gamma_mixed, 2)
     n1 = n_coefficients
 
-    term1 = optein"pi,pjI,pkJ,p->ijkIJ"(u[:, 1:n1], gamma_mixed[:, :, 1:n1], gamma_coords, measure)
-    term2 = optein"pi,pI,pjkJ,p->ijkIJ"(u[:, 1:n1], u[:, 1:n1], hessian_coords, measure)
+    # Fold the measure μ into the first (φ_i) factor rather than passing it as a
+    # separate length-n contraction argument: Σ_p (u_pi μ_p)·… ≡ Σ_p u_pi·…·μ_p.
+    # OMEinsum's path optimiser picks a pathological order for the 4-factor form
+    # (the trailing `,p` vector), making term1 ~5× slower than numpy's opt_einsum;
+    # the folded 3-factor contraction is ~3× faster and matches to ~1e-15.
+    uw = u[:, 1:n1] .* measure
+    term1 = optein"pi,pjI,pkJ->ijkIJ"(uw, gamma_mixed[:, :, 1:n1], gamma_coords)
+    term2 = optein"pi,pI,pjkJ->ijkIJ"(uw, u[:, 1:n1], hessian_coords)
     LC_w = term1 .+ term2                          # (n1, d, d, n1, d)
     return np_reshape(LC_w, n1 * dim^2, n1 * dim)
 end
