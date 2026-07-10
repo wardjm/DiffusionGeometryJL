@@ -1,7 +1,7 @@
 # Weak Levi-Civita connection ∇ : 𝔛(M) → Ω¹(M) ⊗ Ω¹(M).
 # Port of `operators/differential_operators/levi_civita.py`.
 
-using OMEinsum: @ein_str
+using OMEinsum: @ein_str, @optein_str
 
 """
     levi_civita_02_weak(u, gamma_mixed, gamma_coords, hessian_coords, measure, n_coefficients) -> Matrix
@@ -20,8 +20,8 @@ function levi_civita_02_weak(u::AbstractMatrix, gamma_mixed::AbstractArray{<:Any
     dim = size(gamma_mixed, 2)
     n1 = n_coefficients
 
-    term1 = ein"pi,pjI,pkJ,p->ijkIJ"(u[:, 1:n1], gamma_mixed[:, :, 1:n1], gamma_coords, measure)
-    term2 = ein"pi,pI,pjkJ,p->ijkIJ"(u[:, 1:n1], u[:, 1:n1], hessian_coords, measure)
+    term1 = optein"pi,pjI,pkJ,p->ijkIJ"(u[:, 1:n1], gamma_mixed[:, :, 1:n1], gamma_coords, measure)
+    term2 = optein"pi,pI,pjkJ,p->ijkIJ"(u[:, 1:n1], u[:, 1:n1], hessian_coords, measure)
     LC_w = term1 .+ term2                          # (n1, d, d, n1, d)
     return np_reshape(LC_w, n1 * dim^2, n1 * dim)
 end

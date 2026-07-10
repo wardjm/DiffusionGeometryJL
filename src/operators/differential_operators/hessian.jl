@@ -1,7 +1,7 @@
 # Hessian operators H : A → Ω¹(M) ⊗ Ω¹(M).
 # Port of `operators/differential_operators/hessian.py`.
 
-using OMEinsum: @ein_str
+using OMEinsum: @ein_str, @optein_str
 
 """
     hessian_functions(u, coords, gamma_coords, gamma_mixed, cdc) -> Array
@@ -38,7 +38,7 @@ function hessian_02_weak(u::AbstractMatrix, hessian_matrix::AbstractArray{<:Any,
                          measure::AbstractVector, n_coefficients::Integer)
     dim, n0 = size(hessian_matrix, 3), size(hessian_matrix, 4)
     n1 = n_coefficients
-    H_w = ein"pjkI,pi,p->ijkI"(hessian_matrix, u[:, 1:n1], measure)   # (n1, d, d, n0)
+    H_w = optein"pjkI,pi,p->ijkI"(hessian_matrix, u[:, 1:n1], measure)   # (n1, d, d, n0)
     return np_reshape(H_w, n1 * dim^2, n0)
 end
 
@@ -66,6 +66,6 @@ function hessian_02_sym_weak(u::AbstractMatrix, hessian_matrix::AbstractArray{T,
         end
     end
 
-    H_sym = ein"pSI,pi,p->iSI"(hsym, u[:, 1:n1], measure)    # (n1, d_sym, n0)
+    H_sym = optein"pSI,pi,p->iSI"(hsym, u[:, 1:n1], measure)    # (n1, d_sym, n0)
     return np_reshape(H_sym, n1 * dsym, n0)
 end

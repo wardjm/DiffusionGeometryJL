@@ -1,7 +1,7 @@
 # Weak up-Laplacian Δ_up = δ d : Ωᵏ(M) → Ωᵏ(M).
 # Port of `operators/differential_operators/laplacian.py`.
 
-using OMEinsum: @ein_str
+using OMEinsum: @ein_str, @optein_str
 using LinearAlgebra: lu!, ldiv!
 
 """
@@ -37,8 +37,8 @@ function up_delta_weak(gamma_functions::AbstractArray{<:Any,3},
 
     if k == 1
         # det([[a,b],[c,d]]) = ad − bc
-        term1 = ein"p,pik,pjl->ijkl"(measure, gamma_functions[:, 1:n1, 1:n1], gamma_coords)
-        term2 = ein"p,pli,pjk->ijkl"(measure, gamma_mixed[:, :, 1:n1], gamma_mixed[:, :, 1:n1])
+        term1 = optein"p,pik,pjl->ijkl"(measure, gamma_functions[:, 1:n1, 1:n1], gamma_coords)
+        term2 = optein"p,pli,pjk->ijkl"(measure, gamma_mixed[:, :, 1:n1], gamma_mixed[:, :, 1:n1])
         integral = term1 .- term2
         return np_reshape(integral, n1 * dim, n1 * dim)
     end
@@ -75,7 +75,7 @@ function up_delta_weak(gamma_functions::AbstractArray{<:Any,3},
 
     detD_measure = detD .* reshape(measure, n, 1, 1)     # (n, Ck, Ck)
     term1 = ein"piI,pjJ->ijIJ"(gamma_functions[:, 1:n1, 1:n1], detD_measure)
-    term2 = ein"pjJ,piJr,pjJrI->ijIJ"(detD_measure, b, V)
+    term2 = optein"pjJ,piJr,pjJrI->ijIJ"(detD_measure, b, V)
     integral = term1 .- term2
     return np_reshape(integral, n1 * Ck, n1 * Ck)
 end
