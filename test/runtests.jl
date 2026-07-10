@@ -15,5 +15,7 @@ include("parity.jl")
     include("test_ambient.jl")
     include("test_methods.jl")
     include("test_graph.jl")
+    include("test_visualisation.jl")
     include("test_notebooks.jl")
+    include("test_makie_ext.jl")
 end

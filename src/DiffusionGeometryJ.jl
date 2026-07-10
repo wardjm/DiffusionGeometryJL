@@ -92,4 +92,17 @@ include("methods/geodesics.jl")
 
 export solve_differential_operator, geodesic_distances_function
 
+# ── Visualisation: numerics here, drawing in the Makie package extension ──────
+include("visualisation/hodge_star.jl")
+include("visualisation/api.jl")
+
+export hodge_star_2_form
+export DIVERGING_COLORMAP, CYCLIC_COLORMAP
+export dgplot, dgplot!, dgscatter, dgscatter!, dgquiver, dgquiver!
+export dg2form, dg2form!, dg3form, dg3form!
+export dgellipsoids, dgellipsoids!, dgeiglines, dgeiglines!
+export dgtangentplanes, dgtangentplanes!, dganimate
+
+__init__() = _register_plot_hint()
+
 end # module

@@ -13,17 +13,25 @@ OMEinsum = "ebe7aa44-baf0-506c-a96f-8464559b3922"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SCS = "c946c3f1-0d1f-5ce8-9dea-7daa1f7e2d13"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[weakdeps]
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+
+[extensions]
+DiffusionGeometryJMakieExt = "Makie"
 
 [compat]
 Convex = "0.16.6"
+Makie = "0.24"
 OMEinsum = "0.9.4"
 SCS = "2.6.3"
 julia = "1.10"
 
 [extras]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 NPZ = "15e1cf62-19b3-5cfa-8e77-841668bca605"
-Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "NPZ", "Statistics"]
+test = ["Test", "NPZ", "CairoMakie"]
