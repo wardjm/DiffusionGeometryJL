@@ -7,6 +7,7 @@ using NearestNeighbors: KDTree, knn
 using SparseArrays: sparse, AbstractSparseMatrix
 using LinearAlgebra: Diagonal, Symmetric, eigen
 using Arpack: eigs
+using Random: MersenneTwister
 
 """
     knn_graph(data_matrix, knn_kernel=32) -> (nbr_distances, nbr_indices)
@@ -160,7 +161,13 @@ function compute_eigenfunction_basis(symmetric_kernel_matrix, row_sums; n0::Inte
     n0_eff = Int(min(max(1, n0), n))
 
     if n0_eff < n
-        vals, vecs = eigs(Symmetric(Ksym); nev=n0_eff, which=:LM, tol=1e-2)
+        # Deterministic, fully-converged Arpack solve. A random start vector with a
+        # loose tolerance can occasionally converge to a different top-n0 subspace
+        # when an eigenvalue sits near the truncation boundary, which changes the
+        # eigenbasis (and every operator built on it) run to run. A fixed v0 plus a
+        # tight tolerance pins down the same largest-n0 subspace scipy's eigsh finds.
+        v0 = randn(MersenneTwister(0), n)
+        vals, vecs = eigs(Symmetric(Ksym); nev=n0_eff, which=:LM, tol=1e-9, v0=v0)
         vals, vecs = real(vals), real(vecs)
     else
         E = eigen(Symmetric(Matrix(Ksym)))

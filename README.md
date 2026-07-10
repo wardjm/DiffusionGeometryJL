@@ -24,9 +24,9 @@ Given nothing but a point cloud, `DiffusionGeometryJ` builds a discrete
 approximation of the manifold the points are sampled from and lets you do
 differential geometry on it: take gradients and Hessians, build the exact and
 Hodge Laplacians on differential forms, measure lengths and angles with the
-learned metric, compute curvature, solve heat/wave-type PDEs, and estimate
-geodesic distances. Everything is driven by the heat diffusion of the data — no
-mesh, no charts, no prescribed metric.
+learned metric, compute curvature, solve heat/wave-type PDEs, estimate geodesic
+distances, and read off Betti numbers from harmonic forms. Everything is driven by
+the heat diffusion of the data — no mesh, no charts, no prescribed metric.
 
 ## Installation
 
@@ -166,6 +166,48 @@ Convex.jl + SCS):
 ```julia
 dists = geodesic_distances_function(dg, source_index)         # 1-based index
 ```
+
+## Topology (Betti numbers)
+
+Harmonic `k`-forms represent the `k`-th cohomology, so their count is the Betti
+number `bₖ`. Following the diffusion-geometry approach, they are read off a
+*penalised* Hodge operator `up_laplacian(k) + w·down_laplacian(k)` (large `w`): the
+harmonic forms are the smallest eigenvalues, separated from the rest by a spectral
+gap. The primary entry point returns that spectrum as a reviewable object:
+
+```julia
+bs = betti_spectrum(dg, 1)     # BettiSpectrum for degree k
+bs.values                      # ascending eigenvalues; the small cluster is b₁
+```
+
+Printing it marks the harmonic cluster, the gap, and a confidence label:
+
+```
+BettiSpectrum: degree k=1, penalty w=1.0e10
+  suggested b₁ = 1   (spectral gap 14.6× — clear)
+  smallest eigenvalues:
+     1: 0.9502  ← harmonic
+     2: 13.9  ┃ gap ×14.6
+     ...
+```
+
+Auto-count when you trust the gap, or ask for the gap itself as a confidence
+signal:
+
+```julia
+betti_number(dg, 1)            # Int for one degree
+betti_numbers(dg; kmax=2)      # [b₀, b₁, b₂]
+betti_gap(betti_spectrum(dg, 1))   # the gap at the cut (≳10× is clear)
+betti_spectra(dg; kmax=2)      # every degree's spectrum, to review at once
+```
+
+> **Build `dg` with the full coefficient basis** (`n_coefficients == n_function_basis`,
+> the default) — truncating discards the harmonic forms. The auto-count is a
+> spectral-gap heuristic: `b₀` (connected components) is robust and `b₁` is reliable
+> when the gap is clear, but a marginal gap can flip and the top intrinsic degree
+> over-counts. Review the spectrum by eye near those cases, and use a dedicated
+> persistent-homology package (e.g. Ripserer) for a cross-check — see
+> [`bench/betti_vs_ripserer.jl`](bench/betti_vs_ripserer.jl).
 
 ## Plotting
 
