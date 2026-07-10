@@ -221,7 +221,7 @@ function inner(dg::DiffusionGeometry, a::AbstractTensor, b::AbstractTensor)
     B = prod(target; init=1)
     afe = _expand_leading(af, B)
     bfe = _expand_leading(bf, B)
-    res = ein"AB,cA,cB->c"(G, afe, bfe)          # (B,)
+    res = optein"AB,cA,cB->c"(G, afe, bfe)          # (B,)
     isempty(target) && return res[1]
     return np_reshape(res, target...)
 end

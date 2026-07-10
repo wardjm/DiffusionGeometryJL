@@ -6,7 +6,7 @@
 # one argument partially applies on the left to yield a `LinearOperator`; with two,
 # it evaluates the bilinear form. `transpose` / `'` swap the input slots.
 
-using OMEinsum: @ein_str
+using OMEinsum: @ein_str, @optein_str
 
 """
     BilinearOperator(domain_a, domain_b, codomain; weak_tensor=nothing, strong_tensor=nothing)
@@ -67,7 +67,7 @@ function full_apply(B::BilinearOperator, x::AbstractTensor, y::AbstractTensor)
     nb = prod(target; init=1)
     xe = _expand_leading(xf, nb)
     ye = _expand_leading(yf, nb)
-    val = ein"iAB,bA,bB->bi"(strong(B), xe, ye)      # (nb, codim)
+    val = optein"iAB,bA,bB->bi"(strong(B), xe, ye)      # (nb, codim)
     return wrap(B.codomain, restore_batch_dims(val, target))
 end
 

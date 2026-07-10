@@ -1,7 +1,7 @@
 # Weak Lie bracket [X, Y] : 𝔛(M) × 𝔛(M) → 𝔛(M).
 # Port of `operators/differential_operators/lie_bracket.py`.
 
-using OMEinsum: @ein_str
+using OMEinsum: @ein_str, @optein_str
 
 """
     lie_bracket_weak(u, coords, gamma_coords, measure, n_coefficients, cdc) -> Array
@@ -22,7 +22,7 @@ function lie_bracket_weak(u::AbstractMatrix, coords::AbstractMatrix,
     gamma_comp_lie = cdc(coords, product)         # Γ(x_j, φ_I Γ(x_J, x_t))  (n, d, n1, d, d)
 
     # ∫ φ_s φ_i Γ(x_j, φ_I Γ(x_J, x_t)) dμ   →  (n1, d, n1, d, n1, d)
-    lie = ein"ps,pi,pjIJt,p->stijIJ"(un1, un1, gamma_comp_lie, measure)
+    lie = optein"ps,pi,pjIJt,p->stijIJ"(un1, un1, gamma_comp_lie, measure)
     lie = lie .- permutedims(lie, (1, 2, 5, 6, 3, 4))
     return np_reshape(lie, n1 * dim, n1 * dim, n1 * dim)
 end

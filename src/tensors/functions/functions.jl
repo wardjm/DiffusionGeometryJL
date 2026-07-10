@@ -37,7 +37,7 @@ end
 
 # Gram matrix over the *full* function basis.
 gram(space::FunctionSpace) =
-    ein"p,pi,pI->iI"(measure(space.dg), function_basis(space.dg), function_basis(space.dg))
+    optein"p,pi,pI->iI"(measure(space.dg), function_basis(space.dg), function_basis(space.dg))
 
 function _gram_spectrum(space::FunctionSpace)
     if _is_orthonormal(space)

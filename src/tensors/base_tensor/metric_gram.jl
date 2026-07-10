@@ -1,7 +1,7 @@
 # Metric tensor field and Gram matrix builders.
 # Port of `tensors/base_tensor/metric_gram.py`.
 
-using OMEinsum: @ein_str
+using OMEinsum: @ein_str, @optein_str
 
 """
     metric(u_n1, matrices) -> Array
@@ -54,7 +54,7 @@ function _metric_apply(u_n1::AbstractMatrix, regularise_func, a_coeffs, b_coeffs
     B = prod(target; init=1)
     ap = _expand_leading(a_point, B)
     bp = _expand_leading(b_point, B)
-    metric_vals = ein"bpc,pcd,bpd->bp"(ap, matrices, bp)   # (B, n)
+    metric_vals = optein"bpc,pcd,bpd->bp"(ap, matrices, bp)   # (B, n)
     n = size(u_n1, 1)
     mv = np_reshape(metric_vals, target..., n)
     return _apply_regularise(regularise_func, mv, target, n)
@@ -69,6 +69,6 @@ Gram matrix of a tensor basis, shape `(n1 C, n1 C)`.
 function gram(u_n1::AbstractMatrix, matrices::AbstractArray{<:Any,3}, measure::AbstractVector)
     n1 = size(u_n1, 2)
     C = size(matrices, 2)
-    G = ein"p,pi,pI,pab->iaIb"(measure, u_n1, u_n1, matrices)   # (n1, C, n1, C)
+    G = optein"p,pi,pI,pab->iaIb"(measure, u_n1, u_n1, matrices)   # (n1, C, n1, C)
     return np_reshape(G, n1 * C, n1 * C)
 end

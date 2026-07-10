@@ -5,7 +5,7 @@
 # Hodge decompositions. Kept in the Phase-5 block so the operator types are already
 # defined.
 
-using OMEinsum: @ein_str
+using OMEinsum: @ein_str, @optein_str
 import LinearAlgebra
 
 # ── VectorField as a directional-derivative operator ───────────────────────────
@@ -20,7 +20,7 @@ function vf_operator(X::VectorField)
     dg = geometry(X)
     n1, d = n_coefficients(dg), ambient_dim(dg)
     U = function_basis(dg)
-    weak_matrix = ein"ij,ps,pi,pjt,p->st"(
+    weak_matrix = optein"ij,ps,pi,pjt,p->st"(
         np_reshape(X.coeffs, n1, d), U, U[:, 1:n1], gamma_mixed(dg.cache), measure(dg))
     return LinearOperator(function_space(dg), function_space(dg); weak_matrix=weak_matrix)
 end
@@ -48,7 +48,7 @@ function t02_operator(α::Tensor02)
     alpha = np_reshape(α.coeffs, n1, d, d)
     U = function_basis(dg)[:, 1:n1]
     Gamma = gamma_coords(dg.cache)
-    W4 = ein"abc,pi,pj,pa,pJb,pIc,p->iIjJ"(alpha, U, U, U, Gamma, Gamma, measure(dg))
+    W4 = optein"abc,pi,pj,pa,pJb,pIc,p->iIjJ"(alpha, U, U, U, Gamma, Gamma, measure(dg))
     weak_matrix = np_reshape(W4, n1 * d, n1 * d)
     return LinearOperator(vector_field_space(dg), vector_field_space(dg); weak_matrix=weak_matrix)
 end
@@ -78,7 +78,7 @@ function (α::Tensor02)(X::VectorField, Y::VectorField)
     Xc = np_reshape(_expand_leading(Xf, B), B, n1, d)
     Yc = np_reshape(_expand_leading(Yf, B), B, n1, d)
     # e = batch axis (broadcast/diagonal), p = point axis.
-    res = ein"eabc,eij,eIJ,pa,pi,pI,pbj,pcJ->ep"(A, Xc, Yc, U, U, U, Gamma, Gamma)  # (B, n)
+    res = optein"eabc,eij,eIJ,pa,pi,pI,pbj,pcJ->ep"(A, Xc, Yc, U, U, U, Gamma, Gamma)  # (B, n)
     mv = np_reshape(res, target..., n)
     return _apply_regularise(regularise_fn(dg), mv, target, n)
 end
@@ -95,7 +95,7 @@ function to_ambient(α::Tensor02)
     data = np_reshape(to_pointwise_basis(α), npoints(dg), ambient_dim(dg), ambient_dim(dg))
     gamma = cdc(dg.triple, dg.triple.immersion_coords, dg.triple.immersion_coords)
     gamma = regularise(dg.triple, gamma)
-    return ein"nai,nbj,nij->nab"(gamma, gamma, data)
+    return optein"nai,nbj,nij->nab"(gamma, gamma, data)
 end
 
 # ── Tensor02Sym delegates its action to the full (0,2)-tensor ──────────────────

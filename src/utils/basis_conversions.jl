@@ -7,7 +7,7 @@
 # basis is orthonormal). All multi-axis reshapes use `np_reshape` (row-major) so
 # the flattened coefficient layout matches the Python reference / the Gram basis.
 
-using OMEinsum: @ein_str
+using OMEinsum: @ein_str, @optein_str
 
 """
     _from_pointwise_basis(data, space; basis_count=nothing) -> Array
@@ -25,7 +25,7 @@ function _from_pointwise_basis(data::AbstractArray, space; basis_count=nothing)
     B = prod(batch; init=1)
     data_flat = np_reshape(data, B, n, C)                        # (B, n, C)
     u = @view function_basis(dgv)[:, 1:basis_count]
-    weak = ein"p,pi,bpI->biI"(measure(dgv), u, data_flat)        # (B, basis, C)
+    weak = optein"p,pi,bpI->biI"(measure(dgv), u, data_flat)        # (B, basis, C)
     if _is_orthonormal(function_space(dgv))
         coeffs_flat = weak
     else
