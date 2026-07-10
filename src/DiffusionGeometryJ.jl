@@ -89,8 +89,10 @@ export vector_field_to_quiver, vector_field_from_reconstruction
 # ── Phase 6: methods (spectral PDE solver + geodesic distances) ───────────────
 include("methods/pde.jl")
 include("methods/geodesics.jl")
+include("methods/topology.jl")
 
 export solve_differential_operator, geodesic_distances_function
+export BettiSpectrum, betti_spectrum, betti_spectra, betti_number, betti_numbers, betti_gap
 
 # ── Visualisation: numerics here, drawing in the Makie package extension ──────
 include("visualisation/hodge_star.jl")
