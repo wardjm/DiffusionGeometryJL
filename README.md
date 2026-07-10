@@ -193,6 +193,37 @@ available directly. Animate a time-evolving field with `dganimate`. See
 - Arrays keep a leading point axis `p`, so a field's coefficients are laid out
   per point.
 
+## Performance
+
+Benchmarked against the original Python package (warm timings, median of repeated
+runs on a random 3-D point cloud, `knn=20`, `n_function_basis=32`,
+`n_coefficients=16`; scripts and instructions in [`bench/`](bench)).
+
+The full construction pipeline (`from_point_cloud` + degree-0 Laplacian spectrum)
+is faster across every size tested — the lead is largest at small `n`
+(per-call overhead) and settles around **1.8× at n = 5000** (0.35 s vs 0.65 s), where
+both implementations are bound by the same BLAS/ARPACK kernels.
+
+The gains are wider on the operator-build path (the weak-matrix contractions),
+which is the bulk of a real workload. At n = 5000:
+
+| Operator | Python | Julia | Speedup |
+|---|---:|---:|---:|
+| `hessian` | 656 ms | 6.9 ms | ~95× |
+| `d(0)` | 2.7 ms | 0.4 ms | ~6.5× |
+| `laplacian(1)` | 11.9 ms | 5.1 ms | ~2.3× |
+| `lie_bracket` | 285 ms | 108 ms | ~2.6× |
+| `levi_civita` | 15.1 ms | 19.7 ms | ~0.8× |
+
+The two dominant operators, `hessian` and `lie_bracket`, are the ones that matter
+in practice, and Julia builds them decisively faster (`hessian` is roughly two
+orders of magnitude quicker). The multi-input contractions are path-optimised with
+OMEinsum's `@optein_str`.
+
+One caveat: a fresh Julia process pays a one-time JIT compilation cost (~10 s) on
+the first `from_point_cloud` call, which the interpreted Python does not; every
+call after that is warm.
+
 ## Testing
 
 ```bash
