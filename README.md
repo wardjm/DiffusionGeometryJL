@@ -18,15 +18,24 @@ See [`PORTING_PLAN.md`](PORTING_PLAN.md) for scope and the phased plan.
 | 3. Weak-operator builders | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita`, `lie_bracket`, `metric_gram` | ✅ done; the multi-operand einsums via OMEinsum, each weak matrix matches Python |
 | 4. Spaces + tensor algebra | tensor/space types, wedge/metric/inner, `DirectSum` | ✅ done; `g`/`inner`/pointwise products, wedge/tensor products, symmetrise/expand/transpose all match |
 | 5. Operators + orchestrator | `LinearOperator`/`BilinearOperator`, `DiffusionGeometry` + `from_*` constructors | ✅ done; grad/d/codifferential/div, up-/down-/Hodge Laplacians (+ `spectrum`/`inverse`), Hessian, Levi-Civita, Lie bracket, and Riemann/sectional curvature all match |
-| 6. Methods + viz | geodesics, PDE, Makie visualisation | ✅ numeric methods done; viz dropped |
+| 6. Methods + viz | geodesics, PDE, Makie visualisation | ✅ done; numeric methods + a Makie package extension (`dgplot` & friends) |
 
 The **tracer bullet** (per the plan) — `laplacian(0).spectrum()` on a point cloud —
 runs end-to-end, exercising every architectural seam: knn → markov → eigenbasis →
 cdc → weak matrix → Gram → spectral solve. Phase 6 adds the spectral PDE solver
 (`solve_differential_operator`) and geodesic distances
 (`geodesic_distances_function`, a Convex.jl + SCS conic program). The port is
-feature-complete against the Python package; only `visualisation.py` is
-unported (a Makie rewrite, out of scope for the parity port).
+feature-complete against the Python package.
+
+Plotting lives in a **Makie package extension**: load a backend (`using GLMakie` or
+`using CairoMakie`) and `dgplot(t)` picks the visual from the tensor's type — a
+coloured scatter for a function, a quiver for a vector field or 1-form, oriented discs
+for a 2-form, ellipsoids for a `(0,2)`-tensor — pulling the point cloud from the
+tensor's own geometry. `dganimate` records a time-evolving field to mp4/gif (replacing
+Python's `gif_from_functions`). The only numerical routine in Python's `visualisation.py`,
+`hodge_star_2_form`, is ported into the package proper and parity-tested; the rest of
+that module was Plotly-specific drawing with no parity target and is reimplemented,
+not translated. See `docs/plotting.md`.
 
 Porting turned up four bugs in the Python reference — a permutation-parity error
 that silently sign-flips ambient polyvectors of degree `k ≡ 2, 3 (mod 4)`, and three

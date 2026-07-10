@@ -74,6 +74,7 @@ from diffusion_geometry.operators.differential_operators.lie_bracket import (  #
     lie_bracket_weak,
 )
 from diffusion_geometry.tensors.base_tensor.metric_gram import gram  # noqa: E402
+from diffusion_geometry.visualisation import hodge_star_2_form  # noqa: E402
 from scipy.sparse import diags  # noqa: E402
 
 from itertools import combinations  # noqa: E402
@@ -961,6 +962,26 @@ def gen_ambient(outdir: str) -> None:
     save(outdir, "ambient", **arrays)
 
 
+def gen_visualisation(outdir: str) -> None:
+    """
+    `hodge_star_2_form` is the one numerical routine in `visualisation.py`: notebook 5
+    uses it to take the curl of a vector field. The Julia port keeps it in the package
+    proper (not the Makie extension) so it can be gated here; the drawing code has no
+    parity target and is not fixtured.
+    """
+    print("visualisation:")
+    rng = np.random.default_rng(11)
+    for d in (2, 3):
+        omega = rng.standard_normal((7, d, d))
+        omega = omega - np.transpose(omega, (0, 2, 1))          # skew-symmetrise
+        for orientation in (1, -1):
+            tag = "pos" if orientation == 1 else "neg"
+            save(outdir, f"hodge_star_d{d}_{tag}",
+                 omega=omega,
+                 orientation=np.array(orientation),
+                 star=np.asarray(hodge_star_2_form(omega, orientation=orientation)))
+
+
 def main() -> None:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.abspath(
         os.path.join(_HERE, "..", "test", "fixtures"))
@@ -976,6 +997,7 @@ def main() -> None:
     gen_ambient(outdir)
     gen_methods(outdir)
     gen_graph(outdir)
+    gen_visualisation(outdir)
     gen_notebooks(outdir)
     print("done.")
 

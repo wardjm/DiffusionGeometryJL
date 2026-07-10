@@ -7,16 +7,16 @@ Implements *Computing Diffusion Geometry* (Jones & Lanners, 2026): data-driven
 calculus/geometry/topology on point clouds via heat diffusion and the carré du
 champ operator.
 
-> **Progress (2026-07-09): the port is complete.** All six phases done, plus the
-> graph/edge constructor path, the tensor differential-operator sugar and Hodge
-> decompositions, and the final block: ambient polyvectors (`to_ambient`),
-> `wedge_operator`, and the `block`/`hstack`/`vstack` block operators.
-> 342 parity tests green. Everything in the Python package is ported except
-> `visualisation.py` (dropped — a Makie rewrite, no numerical parity target) and the
-> abstract `geometry_engine.py`. Three upstream bugs were found and corrected rather
-> than replicated: two in `methods/geodesics.py` and the permutation-parity error in
-> `basis_utils._perm_tables` (§8). See the status column in §5 and the progress log
-> in §8.
+> **Progress (2026-07-10): the port is complete, including visualisation.** All six
+> phases done, plus the graph/edge constructor path, the tensor differential-operator
+> sugar and Hodge decompositions, ambient polyvectors (`to_ambient`), `wedge_operator`,
+> the `block`/`hstack`/`vstack` block operators, and a Makie plotting extension
+> (`dgplot` & friends + `dganimate`; `hodge_star_2_form` ported into the package proper
+> and parity-tested). 404 tests green. Everything in the Python package is ported except
+> the abstract `geometry_engine.py` (a base class whose body just sets `self.xp = numpy`).
+> Three upstream bugs were found and corrected rather than replicated: two in
+> `methods/geodesics.py` and the permutation-parity error in `basis_utils._perm_tables`
+> (§8). See the status column in §5 and the progress log in §8.
 
 ---
 
@@ -166,7 +166,7 @@ spec — port the relevant tests alongside each phase.
 | **3. Weak-operator builders** | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita_02_weak`, `lie_bracket_weak`, `metric_gram` | Pure matrix builders (the hard einsums) | Each weak matrix matches Python | ✅ done (OMEinsum `@ein_str`; row-major `np_reshape`) |
 | **4. Spaces + tensor algebra** | `BaseTensorSpace` → concrete spaces, `Tensor` → concrete tensors, arithmetic/wedge/metric/`inner`/`norm`, basis conversions, `DirectSum` | `dg.function(x)`-style API | `g`, `inner`, pointwise products match | ✅ done (operator-coupled tensor methods deferred to Phase 5) |
 | **5. Operators + orchestrator** | `LinearOperator` / `BilinearOperator` (`∘`, `'`, `spectrum`, `inverse`), `DiffusionGeometry` + `GammaCache`, all constructors (`from_point_cloud`, `from_edges`, …) | **Full public API**; README Quick Start runs | `grad`, `d(k)`, `laplacian(k).spectrum()`, `hessian`, `levi_civita`, curvature all match | ✅ done (incl. `from_edges`/`from_graph_kernel`/`from_sparse_matrix`) |
-| **6. Methods + viz (optional)** | `methods/geodesics.py`, `methods/pde.py`; rewrite visualization in Makie | End-to-end examples | Notebook figures reproduce | ⬜ |
+| **6. Methods + viz** | `methods/geodesics.py`, `methods/pde.py`; rewrite visualisation in Makie | End-to-end examples | Numeric methods parity-tested; plots reproduce notebook figures | ✅ done (Makie package extension: `dgplot`/recipes/`dganimate`; `hodge_star_2_form` parity-tested) |
 
 ### Recommended tracer bullet
 The vertical slice Phase 1 → 2 → minimal 4/5 needed to run
@@ -332,8 +332,8 @@ parity tests as Phase 3.
   had never run). The SOCP optimum is effectively unique, so cvxpy/SCS and
   Convex.jl/SCS agree to ~1e-12 (gated loosely at rtol/atol 1e-3 for cross-build
   robustness). New deps: `Convex`, `SCS`, `Random`. Fixture `methods.npz`.
-  `visualisation.py` and pde's `gif_from_functions` are **dropped** (plotly/Makie
-  rendering has no numerical parity target). *Deferred at the time:* the graph path
+  Visualisation (`visualisation.py`, pde's `gif_from_functions`) was deferred to a
+  Makie extension — see the 2026-07-10 entry. *Deferred at the time:* the graph path
   (`carre_du_champ_graph` → `from_edges`) and `VectorField.from_reconstruction`.
 
 - **Graph / edge path (2026-07-08):** ported the last deferred constructor path.
@@ -393,9 +393,22 @@ decompositions reconstruct (`ω = dα + δβ + h`).
   - `wedge_operator` returns a `LinearOperator` (the Python function returns the bare
     coefficient matrix, which is `matrix(wedge_operator(a, l))`).
 
-**Remaining gaps:** none. Only `visualisation.py` (dropped: a Makie rewrite, no
-numerical parity target) and `geometry_engine.py` (an abstract base whose body only
-sets `self.xp = numpy`) are excluded.
+- **Visualisation (2026-07-10):** ported `visualisation.py` as a Makie **package
+  extension** (`ext/DiffusionGeometryJMakieExt.jl`, loads with any Makie backend). The
+  public API is declared in `src/visualisation/api.jl` so the names export from the
+  package proper; `@recipe` in the extension adds methods to those stubs. `dgplot(t)`
+  dispatches on the tensor's type to the right recipe (`dgscatter`/`dgquiver`/`dg2form`/
+  `dg3form`/`dgellipsoids`) — pulling points from `geometry(t)`, so it collapses the
+  Python `plot_x(dg.immersion_coords, t.to_ambient())` idiom to dispatch — and cleans the
+  axis it creates (`clean_fig`'s job). `dganimate` replaces `gif_from_functions` via
+  Makie's `record`. Camera projection / `overpic_labels` are Plotly/LaTeX workarounds
+  with no Makie analogue and are not ported. **`hodge_star_2_form`** — the one numerical
+  routine in `visualisation.py` (curl in notebook 5) — went into the package proper
+  (`src/visualisation/hodge_star.jl`) and is parity-tested (fixtures `hodge_star_d{2,3}_*`,
+  `test_visualisation.jl`). New weakdep `Makie`; test dep `CairoMakie`. Suite now 404 tests.
+
+**Remaining gaps:** none. Only `geometry_engine.py` (an abstract base whose body only
+sets `self.xp = numpy`) is excluded.
 
 **Upstream bugs.** Four defects found in the Python reference over the course of the
 port are catalogued — with reproductions, root causes and patches — in
@@ -431,4 +444,4 @@ via invariants rather than the raw output.
 | `operators/types/{linear,bilinear,direct_sum}.py` | 5 |
 | `core/geometry/{diffusion_geometry,cache,geometry_engine}.py` | 5 |
 | `methods/geodesics.py`, `methods/pde.py` | 6 |
-| `visualisation.py` | 6 (rewrite in Makie) |
+| `visualisation.py` | 6 (Makie extension; `hodge_star_2_form` in `src/`) |
