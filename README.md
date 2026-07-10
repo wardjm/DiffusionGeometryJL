@@ -1,123 +1,200 @@
 # DiffusionGeometryJ
 
-Julia port of [`DiffusionGeometry`](../DiffusionGeometry) (Python) — data-driven
-calculus/geometry/topology on point clouds via heat diffusion and the carré du
-champ operator (Jones & Lanners, *Computing Diffusion Geometry*, 2026).
+Data-driven calculus, geometry, and topology on point clouds — via heat
+diffusion and the carré du champ operator.
 
-See [`PORTING_PLAN.md`](PORTING_PLAN.md) for scope and the phased plan.
+This is a Julia port of the
+[`DiffusionGeometry`](https://github.com/Iolo-Jones/DiffusionGeometry) Python
+package by **Iolo Jones and David Lanners** (*Computing Diffusion Geometry*,
+2026). All of the underlying mathematics, the algorithms, and the reference
+implementation are their work; this package reimplements them in Julia. Please
+cite the original authors when using this software:
 
-## Status
+```bibtex
+@article{jones2026computing,
+  title={Computing Diffusion Geometry},
+  author={Jones, Iolo and Lanners, David},
+  year={2026}
+}
+```
 
-342 parity tests green.
+## What it does
 
-| Phase | Scope | State |
-|---|---|---|
-| 0. Skeleton | package, deps, CI, parity harness | ✅ done |
-| 1. Combinatorics + utils | `basis_utils`, `regularise` | ✅ done (index arrays, `regularise`, `batch_utils`, tensor-coeff `expand`/`symmetrise`, `form_to_ambient_polyvector`) |
-| 2. Diffusion core | knn → markov → eigenbasis, carré du champ, γ-tensors | ✅ done; builds an `ImmersedMarkovTriple` from a point cloud or a graph (`carre_du_champ_graph`) |
-| 3. Weak-operator builders | `derivative_weak`, `hessian_*`, `up_delta_weak`, `levi_civita`, `lie_bracket`, `metric_gram` | ✅ done; the multi-operand einsums via OMEinsum, each weak matrix matches Python |
-| 4. Spaces + tensor algebra | tensor/space types, wedge/metric/inner, `DirectSum` | ✅ done; `g`/`inner`/pointwise products, wedge/tensor products, symmetrise/expand/transpose all match |
-| 5. Operators + orchestrator | `LinearOperator`/`BilinearOperator`, `DiffusionGeometry` + `from_*` constructors | ✅ done; grad/d/codifferential/div, up-/down-/Hodge Laplacians (+ `spectrum`/`inverse`), Hessian, Levi-Civita, Lie bracket, and Riemann/sectional curvature all match |
-| 6. Methods + viz | geodesics, PDE, Makie visualisation | ✅ done; numeric methods + a Makie package extension (`dgplot` & friends) |
+Given nothing but a point cloud, `DiffusionGeometryJ` builds a discrete
+approximation of the manifold the points are sampled from and lets you do
+differential geometry on it: take gradients and Hessians, build the exact and
+Hodge Laplacians on differential forms, measure lengths and angles with the
+learned metric, compute curvature, solve heat/wave-type PDEs, and estimate
+geodesic distances. Everything is driven by the heat diffusion of the data — no
+mesh, no charts, no prescribed metric.
 
-The **tracer bullet** (per the plan) — `laplacian(0).spectrum()` on a point cloud —
-runs end-to-end, exercising every architectural seam: knn → markov → eigenbasis →
-cdc → weak matrix → Gram → spectral solve. Phase 6 adds the spectral PDE solver
-(`solve_differential_operator`) and geodesic distances
-(`geodesic_distances_function`, a Convex.jl + SCS conic program). The port is
-feature-complete against the Python package.
+## Installation
 
-Plotting lives in a **Makie package extension**: load a backend (`using GLMakie` or
-`using CairoMakie`) and `dgplot(t)` picks the visual from the tensor's type — a
-coloured scatter for a function, a quiver for a vector field or 1-form, oriented discs
-for a 2-form, ellipsoids for a `(0,2)`-tensor — pulling the point cloud from the
-tensor's own geometry. `dganimate` records a time-evolving field to mp4/gif (replacing
-Python's `gif_from_functions`). The only numerical routine in Python's `visualisation.py`,
-`hodge_star_2_form`, is ported into the package proper and parity-tested; the rest of
-that module was Plotly-specific drawing with no parity target and is reimplemented,
-not translated. See `docs/plotting.md`.
+```julia
+using Pkg
+Pkg.add(url="https://github.com/wardjm/DiffusionGeometryJ.jl")
+```
 
-Porting turned up four bugs in the Python reference — a permutation-parity error
-that silently sign-flips ambient polyvectors of degree `k ≡ 2, 3 (mod 4)`, and three
-`AttributeError`s in code paths that had evidently never run. Where a bug has a
-numerical parity target, this port implements the correct behaviour and the fixture
-stores a corrected reference. All four are written up in
-[`docs/upstream-bugs.md`](docs/upstream-bugs.md).
+Plotting is provided through a package extension that loads only when a
+[Makie](https://docs.makie.org) backend is present:
 
-## What works today
+```julia
+Pkg.add("GLMakie")   # or CairoMakie
+```
+
+## Quick start
 
 ```julia
 using DiffusionGeometryJ
 
-# a point cloud (n × d)
+# a point cloud: n points in d ambient dimensions (n × d)
 data = randn(200, 3)
 
 # full pipeline: kNN graph → Markov chain → symmetric kernel → eigenbasis
 dg = from_point_cloud(data; knn_kernel=20, n_function_basis=32, n_coefficients=16)
 
-# Hodge Laplacian on functions and its spectrum (the tracer-bullet slice)
+# the Hodge Laplacian on functions, and its spectrum
 Δ₀ = laplacian(dg, 0)
 evals = spectrum(Δ₀; eigvals_only=true)     # ascending; evals[1] ≈ 0
-
-# differential operators as LinearOperators / BilinearOperators
-f  = dg_function(dg, data[:, 1])            # a scalar field from pointwise values
-∇f = grad(dg)(f)                            # VectorField
-l2_norm(∇f)                                 # global L² norm
-H  = hessian(dg)(f)                         # symmetric (0,2)-tensor
-X  = dg_vector_field(dg, randn(200, 3))
-Y  = dg_vector_field(dg, randn(200, 3))
-sectional_curvature(dg, X, Y)               # pointwise sectional curvature (n,)
 ```
 
-## Layout
+## Building a geometry
 
-```
-src/DiffusionGeometryJ.jl                 # module entry point
-src/utils/basis_utils.jl                  # wedge/symmetric indices, lex_rank, wedge products (Phase 1)
-src/core/diffusion/regularise.jl          # diffusion + bandlimit regularisation (Phase 1)
-src/core/diffusion/diffusion_process.jl   # knn → markov → symmetric kernel → eigenbasis (Phase 2)
-src/core/diffusion/carre_du_champ.jl      # cdc + γ-tensors (Phase 2)
-src/core/diffusion/markov_triples.jl      # (Immersed)MarkovTriple + point-cloud pipeline (Phase 2)
-src/utils/reshape_utils.jl                # np_reshape: numpy C-order (row-major) reshape (Phase 3)
-src/operators/differential_operators/    # weak builders (Phase 3) + DiffusionGeometry operator accessors (Phase 5)
-src/tensors/                              # spaces + tensor algebra: functions/vector fields/forms/(0,2)-tensors/direct sum (Phase 4)
-src/operators/types/                      # LinearOperator / BilinearOperator (Phase 5)
-src/operators/tensor_actions.jl           # operator-coupled tensor methods (Phase 5)
-src/core/geometry/                        # DiffusionGeometry orchestrator + γ cache (Phase 4/5)
-src/methods/                              # spectral PDE solver + geodesic distances (Phase 6)
-pyparity/gen_fixtures.py                  # dumps Python reference outputs → test/fixtures/*.npz
-test/                                     # parity tests (load fixtures, assert agreement)
-```
+A `DiffusionGeometry` is the central object. Construct one from whatever data you
+have:
 
-## Parity harness
+| Constructor | Input |
+|---|---|
+| `from_point_cloud(data)` | raw coordinates `(n × d)` — builds the kNN graph for you |
+| `from_knn_graph(indices, distances)` | a precomputed neighbour graph |
+| `from_knn_kernel(indices, kernel)` | a precomputed kernel on a neighbour graph |
+| `from_edges(edge_index)` | an unweighted graph given by its `(2 × m)` edge list |
+| `from_graph_kernel(edge_index, kernel)` | a weighted graph kernel |
+| `from_sparse_matrix(A)` | a sparse transition/adjacency matrix |
 
-Each phase ends at a parity gate: run the Python reference on fixed-seed input,
-dump its outputs, and assert the Julia port matches — exact for index arrays
-(after the +1 shift), `rtol` for numerics. Fixtures are committed under
-`test/fixtures/`, so CI needs no Python toolchain.
+Common keywords: `knn_kernel` (neighbours per point), `n_function_basis` (size of
+the diffusion eigenbasis), `n_coefficients` (retained coefficients per tensor
+field), and `immersion_coords` (supply ambient coordinates explicitly for a
+graph-only input). Graph and edge-list inputs let you do the same geometry on
+data that never came from a metric space.
 
-Where an output has intrinsic gauge freedom (eigenvector sign/rotation, kNN
-tie-breaking) the test compares an invariant instead: eigen*values* rather than
-eigenvectors, and the diffusion math is fed Python's own kNN output so it doesn't
-depend on `NearestNeighbors.jl` vs. scikit-learn tie-breaking.
+Query it:
 
-Regenerate fixtures (requires the Python `diffusion_geometry` package importable;
-point `DIFFUSION_GEOMETRY_PY` at its checkout, or keep it beside this repo):
-
-```bash
-python pyparity/gen_fixtures.py
+```julia
+npoints(dg)          # number of points
+ambient_dim(dg)      # d
+n_function_basis(dg) # eigenbasis size
+measure(dg)          # the diffusion measure (n,)
 ```
 
-## Test
+## Tensor fields
+
+Wrap pointwise data as a typed field on the geometry:
+
+```julia
+f  = dg_function(dg, data[:, 1])          # ScalarFunction from pointwise values
+X  = dg_vector_field(dg, randn(200, 3))   # VectorField
+ω  = dg_form(dg, coeffs, 2)               # a 2-form
+T  = dg_tensor02(dg, coeffs)              # a (0,2)-tensor
+S  = dg_tensor02sym(dg, coeffs)           # a symmetric (0,2)-tensor
+```
+
+The field types — `ScalarFunction`, `VectorField`, `Form`, `Tensor02`,
+`Tensor02Sym`, and `DirectSumElement` — support arithmetic, wedge and tensor
+products, `symmetrise`/`transpose_tensor`, and musical isomorphisms `sharp`/`flat`.
+The learned metric gives you geometry:
+
+```julia
+g(dg, X, Y)          # pointwise inner product of two fields (n,)
+inner(X, Y)          # global L² inner product
+l2_norm(X)           # global L² norm
+pointwise_norm(X)    # pointwise norm (n,)
+```
+
+## Differential operators
+
+Operator accessors take the geometry and return a `LinearOperator` or
+`BilinearOperator` you can apply, compose (`∘`), invert, or spectrally decompose:
+
+```julia
+∇f = grad(dg)(f)                    # gradient → VectorField
+Hf = hessian(dg)(f)                 # Hessian → symmetric (0,2)-tensor
+df = d(dg, 1)(ω)                    # exterior derivative of a k-form
+δω = codifferential(dg, 2)(ω)       # codifferential
+divX = divergence(dg)(X)            # divergence of a vector field
+```
+
+Laplacians on `k`-forms, with spectra:
+
+```julia
+up_laplacian(dg, k)     # d δ
+down_laplacian(dg, k)   # δ d
+laplacian(dg, k)        # Hodge Laplacian on k-forms
+spectrum(laplacian(dg, k))          # eigenvalues + eigenfunctions
+inverse(laplacian(dg, 0))           # spectral (pseudo)inverse as an operator
+```
+
+Curvature and other structure:
+
+```julia
+lie_bracket(dg, X, Y)               # [X, Y]
+levi_civita(dg)                     # the connection
+riemann_curvature(dg)               # Riemann curvature operator
+sectional_curvature(dg, X, Y)       # pointwise sectional curvature (n,)
+```
+
+There is convenience sugar directly on fields, too — `grad(f)`, `d(f)`, `d(ω)`,
+`laplacian(ω)`, the interior product `ω(X)`, and Hodge decomposition:
+
+```julia
+harmonic, exact_potential, coexact_potential = hodge_decomposition(ω)
+```
+
+## Numerical methods
+
+Evolve a field under an operator (heat/Schrödinger-type flows), by diagonalising
+and exponentiating in the eigenbasis:
+
+```julia
+ts  = range(0, 1; length=20)
+sol = solve_differential_operator(-laplacian(dg, 0), f, ts)   # f(t) for each t
+```
+
+Estimate geodesic distances from a source point (a conic program solved with
+Convex.jl + SCS):
+
+```julia
+dists = geodesic_distances_function(dg, source_index)         # 1-based index
+```
+
+## Plotting
+
+Load any Makie backend and `dgplot` chooses the visual from the field's type,
+pulling the point cloud from the field's own geometry:
+
+```julia
+using GLMakie   # or CairoMakie
+
+dgplot(f)       # coloured scatter for a scalar function
+dgplot(X)       # quiver for a vector field or 1-form
+dgplot(ω)       # oriented discs for a 2-form
+dgplot(T)       # ellipsoids for a (0,2)-tensor
+```
+
+`dgplot!` adds to an existing axis. Specialised recipes (`dgscatter`, `dgquiver`,
+`dg2form`, `dg3form`, `dgellipsoids`, `dgeiglines`, `dgtangentplanes`) are
+available directly. Animate a time-evolving field with `dganimate`. See
+[`docs/plotting.md`](docs/plotting.md).
+
+## Conventions
+
+- **1-based indexing** throughout: index values and positions range over `1:d`,
+  in keeping with Julia. Point-cloud data is `n × d` (rows are points).
+- Arrays keep a leading point axis `p`, so a field's coefficients are laid out
+  per point.
+
+## Testing
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
-
-## Conventions
-
-- **1-based indexing.** Index *values* range over `1:d`; ranks/positions are
-  1-based. A Python 0-based array `v` corresponds to the Julia array `v .+ 1`.
-- **Layout.** Arrays keep the Python index order (leading point axis `p`) for a
-  faithful first port; reordering for column-major performance is a later pass
-  gated by the same parity tests.
