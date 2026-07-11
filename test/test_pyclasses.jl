@@ -774,6 +774,19 @@ end
             @test vals_only isa AbstractVector
             @test all(≈(1.0), vals_only)
         end
+
+        # A spectral filter: weight each eigenform by a function of its eigenvalue.
+        @testset "eigenvector batch scaling by a weight vector" begin
+            vals, vecs = spectrum(up_laplacian(dg, 1) + 1.0 * down_laplacian(dg, 1))
+            weights = exp.(-vals)
+            expected = coeffs(vecs) .* reshape(weights, batch_shape(vecs)..., 1)
+
+            for out in (weights * vecs, vecs * weights)
+                @test typeof(out) === typeof(vecs)
+                @test batch_shape(out) == batch_shape(vecs)
+                @test coeffs(out) ≈ expected
+            end
+        end
     end
 
     # Skipped: `repr(op)` contents (Julia's `show` for LinearOperator has a different
@@ -878,14 +891,28 @@ end
             @test coeffs(ωb * 3.0) ≈ cb .* 3.0
         end
 
-        # GAP: Python scales a batched tensor by a length-B vector of per-batch
-        # scalars (`weights * omega`). Julia's `*` only accepts a Number.
         @testset "per-batch scalar vector scaling" begin
             B = 5
             cb = randn(Xoshiro(0), B, n1 * dim)
             ωb = wrap(f1s, cb)
             weights = exp.(-range(0.2, 1.2; length=B))
-            @test_broken coeffs(weights * ωb) ≈ cb .* weights
+
+            @test (weights * ωb) isa Form
+            @test coeffs(weights * ωb) ≈ cb .* weights
+            @test coeffs(ωb * weights) ≈ cb .* weights
+            @test coeffs(ωb / weights) ≈ cb ./ weights
+
+            # The weights broadcast against the *batch* axes only, numpy-style
+            # (right-aligned), and can expand the batch shape.
+            c = randn(Xoshiro(1), n1 * dim)
+            @test coeffs(weights * wrap(f1s, c)) ≈ weights .* transpose(c)
+
+            cb2 = randn(Xoshiro(2), 3, B, n1 * dim)
+            @test coeffs(weights * wrap(f1s, cb2)) ≈ cb2 .* reshape(weights, 1, B, 1)
+
+            # Weights that no batch axis can absorb are an error, never a silent
+            # match against the coefficient axis.
+            @test_throws AssertionError randn(B + 1) * ωb
         end
 
         @testset "function-form product" begin
