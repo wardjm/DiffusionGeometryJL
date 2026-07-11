@@ -1,6 +1,7 @@
 # Bugs found in the upstream Python `DiffusionGeometry`
 
-Defects discovered in the reference implementation while porting it to Julia.
+Defects discovered in the reference implementation while porting it to Julia — and,
+in §5, in its *test suite*, where the shipped code is right but nothing checks it.
 
 - **Upstream:** https://github.com/Iolo-Jones/DiffusionGeometry
 - **Revision audited:** `f45b39f` ("update mdg notebook"), clean tree.
@@ -10,7 +11,9 @@ Where a bug has a numerical parity target, the Julia port implements the *correc
 behaviour and `pyparity/gen_fixtures.py` stores a **corrected** reference, so the
 parity gate compares against the right answer rather than pinning the bug. Each
 correction is guarded: if upstream fixes the bug, fixture generation fails loudly
-rather than silently double-correcting. See `PORTING_PLAN.md` §8.
+rather than silently double-correcting. See `PORTING_PLAN.md` §8. A test defect has
+no parity target and so no such guard — §5 is a coverage hole, closed on the Julia
+side only.
 
 | # | Location | Severity | Status in the port |
 |---|---|---|---|
@@ -18,6 +21,7 @@ rather than silently double-correcting. See `PORTING_PLAN.md` §8.
 | 2 | `tensors/vector_fields/vector_field.py::VectorField.from_reconstruction` | **Dead code** (`AttributeError`) | Reimplemented; round-trip gated |
 | 3 | `methods/geodesics.py::geodesic_distances_function` | **Dead code** (`AttributeError`) ×2 | Fixed; fixture corrected |
 | 4 | `utils/basis_utils.py::form_to_ambient_polyvector` (`k == 0` branch) | Cosmetic (unreachable) | N/A |
+| 5 | `tests/test_src/test_hessian.py::test_hessian_02_sym_weak_matrix` | Test defect (coverage hole) | Corrected expectation; check enabled |
 
 ---
 
@@ -207,3 +211,43 @@ a `FormSpace(dg, 0)` directly.
 **In the port.** Not reproduced. `to_ambient(::ScalarFunction)` is defined
 separately as `to_pointwise_basis(f)`, matching the reachable Python behaviour, and
 Julia's `FormSpace` constructor asserts `1 ≤ degree ≤ dim`.
+
+
+---
+
+## 5. The symmetric Hessian's value check is disabled because the *expectation* is wrong
+
+**Where:** `tests/test_src/test_hessian.py`, `test_hessian_02_sym_weak_matrix`.
+
+**What's wrong.** The test assembles the weak symmetric Hessian by hand and then does
+not compare against it:
+
+```python
+# Manual computation: H_sym_weak[i, s, I] = ∑_p μ[p] * φ_i[p] * H[p, j1(s), j2(s), I]
+...
+# NOTE: Disabling strict value check.
+assert hessian_sym_02_weak_computed.shape == (n1 * d_sym, n0)
+# assert np.allclose(hess_comp_sub, hess_sel_flat)
+```
+
+The expectation is missing the off-diagonal multiplicity factor. `hessian_02_sym_weak`
+doubles the `j₁ ≠ j₂` entries, and it is right to: the symmetric basis element for
+`j₁ ≠ j₂` is `dx_{j₁} ⊗ dx_{j₂} + dx_{j₂} ⊗ dx_{j₁}`, so pairing the (symmetric)
+Hessian against it picks up both entries. The same convention is baked into
+`gamma_02_sym`, whose off-diagonal rows and columns carry the matching ×2. Comparing
+the builder against an expectation that drops the factor fails on exactly the
+off-diagonal rows — so the assertion was commented out rather than the expectation
+fixed, and `hessian_02_sym_weak` was left with no value check on either side of the
+port.
+
+**Severity: test defect.** The shipped builder is correct; the coverage was not. But
+it was the *only* weak-operator builder whose values nothing verified — the fixture
+parity gate compares Julia against Python's output, which proves nothing if Python is
+wrong.
+
+**In the port.** The check is enabled, with the factor restored, in
+`test/test_pysrc.jl` → `hessian` → `hessian_02_sym_weak matrix`, and it passes at
+`d = 1..4`. Because that test asserts the very convention in question, a second test
+pins it convention-free: expanding the strong symmetric coefficients into the full
+`(0,2)` basis and pairing them with the full Gram reproduces `hessian_02_weak`, whose
+`⟨H(φ_I), φ_i dx_j ⊗ dx_k⟩` entries involve no symmetric-basis choice at all.

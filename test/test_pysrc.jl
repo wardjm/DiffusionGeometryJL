@@ -8,6 +8,10 @@
 #
 # `d` is the package's exterior-derivative accessor, so the ambient dimension is
 # spelled `dim` throughout to avoid shadowing it.
+#
+# One test here has no upstream counterpart: `hessian` → `hessian_02_sym_weak agrees
+# with the full (0,2) Hessian`, which corroborates the value check upstream disabled.
+# It is marked as port-added where it appears.
 
 using Combinatorics: combinations
 # `coeffs` and `np_reshape` are internal; the tests need them to poke at the
@@ -164,13 +168,52 @@ end
 # ── test_hessian.py ───────────────────────────────────────────────────────────
 @testset "hessian" begin
     for_each_geom() do dg, (dim, n, n0, n1)
-        d_sym = size(get_symmetric_basis_indices(dim), 1)
+        sym_idx = get_symmetric_basis_indices(dim)
+        d_sym = size(sym_idx, 1)
+        u, mu = function_basis(dg), measure(dg)
+        H = hessian_functions(dg.cache)
 
         # Upstream asserts only the shape here — its value check is commented out
-        # (`NOTE: Disabling strict value check`). Ported as-is; see the note in the
-        # summary rather than silently strengthening it.
-        @testset "hessian_02_sym_weak shape" begin
-            @test size(weak(hessian(dg))) == (n1 * d_sym, n0)
+        # (`NOTE: Disabling strict value check`). The check is enabled below; the
+        # expectation upstream compares against is the thing that is wrong, not the
+        # builder. See docs/upstream-bugs.md §5.
+        @testset "hessian_02_sym_weak matrix" begin
+            H_weak = weak(hessian(dg))
+            @test size(H_weak) == (n1 * d_sym, n0)
+
+            # H_sym_weak[i, s, I] = w_s · Σ_p μ_p φ_i(p) H[p, j₁(s), j₂(s), I], with
+            # w_s = 2 off the diagonal: the symmetric basis element for j₁ ≠ j₂ is
+            # dx_{j₁} ⊗ dx_{j₂} + dx_{j₂} ⊗ dx_{j₁}, so it picks up both entries of
+            # the (symmetric) Hessian. Upstream's expectation drops that factor.
+            i_sel, s_sel, I_sel = sample_indices(n1), sample_indices(d_sym), sample_indices(n0)
+            manual = zeros(length(i_sel) * length(s_sel), length(I_sel))
+            for (a, i) in enumerate(i_sel), (b, s) in enumerate(s_sel)
+                j1, j2 = sym_idx[s, 1], sym_idx[s, 2]
+                w = j1 == j2 ? 1.0 : 2.0
+                for (c, I) in enumerate(I_sel)
+                    manual[(a - 1) * length(s_sel) + b, c] =
+                        w * sum(u[p, i] * H[p, j1, j2, I] * mu[p] for p in 1:n)
+                end
+            end
+            rows = vec([(i - 1) * d_sym + s for s in s_sel, i in i_sel])
+            @test isapprox(H_weak[rows, I_sel], manual; atol=1e-6)
+        end
+
+        # No upstream counterpart — added by the port. The ×2 above is a claim about
+        # the symmetric basis, so pin it without reference to that basis: expand the
+        # strong symmetric coefficients into the full (0, 2) basis, pair them with the
+        # full Gram, and the result must be the full weak Hessian
+        # ⟨H(φ_I), φ_i dx_j ⊗ dx_k⟩ — which carries no such convention.
+        @testset "hessian_02_sym_weak agrees with the full (0,2) Hessian" begin
+            c_sym = gram_inv(tensor02sym_space(dg)) * weak(hessian(dg))
+            c_full = reduce(hcat, [expand_symmetric_tensor_coeffs(c_sym[:, I], n1, dim)
+                                   for I in 1:n0])
+
+            lhs = gram(tensor02_space(dg)) * c_full
+            rhs = hessian_02_weak(u, H, mu, n1)
+            rows = flat_idx(sample_indices(n1), dim * dim)
+            cols = sample_indices(n0)
+            @test isapprox(lhs[rows, cols], rhs[rows, cols]; atol=1e-6)
         end
 
         # Strong/weak relation: G · (G⁻¹ · H_weak) == H_weak.
