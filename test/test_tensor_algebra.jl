@@ -77,6 +77,20 @@
     @testset "wedge and tensor products" begin
         @test aeq(wedge(a1, b1).coeffs, fx["wedge_ab_coeffs"])
         @test aeq((a1 * b1).coeffs, fx["tensorprod_ab_coeffs"])
+
+        # `^` is the Python spelling of the wedge (`*` on two Forms stays the
+        # tensor product, as in Python).
+        @test aeq((a1^b1).coeffs, fx["wedge_ab_coeffs"])
+        @test degree(a1^b1) == 2
+
+        # A Function is a degree-0 form: the wedge degenerates to a pointwise
+        # product, as in Python.
+        @test aeq(wedge(f, a1).coeffs, (f * a1).coeffs)
+        @test aeq((f^a1).coeffs, (f * a1).coeffs)
+        @test aeq((a1^f).coeffs, (a1 * f).coeffs)
+        # …while `^` on two Functions stays the pointwise power, not a product.
+        @test aeq((f^2).coeffs, (f * f).coeffs)
+        @test_throws MethodError wedge(f, h)
     end
 
     @testset "symmetrise / expand / transpose" begin

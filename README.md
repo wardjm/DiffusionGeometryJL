@@ -112,6 +112,13 @@ S  = dg_tensor02sym(dg, randn(200, 6))      # symmetric (0,2)-tensor, (n, d(d+1)
 The field types — `ScalarFunction`, `VectorField`, `Form`, `Tensor02`,
 `Tensor02Sym`, and `DirectSumElement` — support arithmetic, wedge and tensor
 products, `symmetrise`/`transpose_tensor`, and musical isomorphisms `sharp`/`flat`.
+
+```julia
+wedge(α, β)          # wedge product, degree k₁ + k₂ — also spelled α ^ β
+α * β                # ⚠ tensor product of two 1-forms → Tensor02, not the wedge
+f * α                # pointwise product with a function (so is wedge(f, α))
+```
+
 The learned metric gives you geometry:
 
 ```julia
@@ -258,6 +265,11 @@ available directly. Animate a time-evolving field with `dganimate`. See
   in keeping with Julia. Point-cloud data is `n × d` (rows are points).
 - Arrays keep a leading point axis `p`, so a field's coefficients are laid out
   per point.
+- **`*` on two `Form`s is the tensor product**, following Python; the wedge is
+  `wedge(α, β)` or `α ^ β`. Julia's `^` binds *tighter* than `+` and `*` where
+  Python's binds looser than both, so a Python expression that leans on that
+  precedence changes meaning when copied across: `α ^ β + γ` is `(α ∧ β) + γ`
+  here, but `α ∧ (β + γ)` in Python. Parenthesise when porting.
 
 ## Performance
 

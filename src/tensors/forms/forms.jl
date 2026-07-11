@@ -42,9 +42,13 @@ end
 # ── Wedge product α ∧ β : Ωᵏ¹ × Ωᵏ² → Ωᵏ¹⁺ᵏ² ──────────────────────────────────
 """
     wedge(a, b) -> Form
+    a ^ b       -> Form
 
 Wedge product of two forms, `(α ∧ β)_K = Σ_{I∪J=K} sgn(I,J) α_I β_J`. Returns a
 zero function when the combined degree exceeds the ambient dimension.
+
+`^` is the same product, spelled as in Python. Beware that `*` on two `Form`s is
+the *tensor* product, not the wedge.
 """
 function wedge(a::Form, b::Form)
     dg = geometry(a)
@@ -77,8 +81,35 @@ function wedge(a::Form, b::Form)
     return dg_form(dg, out_pw, ktot)
 end
 
+"""
+    wedge(f::ScalarFunction, ω::Form) -> Form
+    wedge(ω::Form, f::ScalarFunction) -> Form
+
+A function is a degree-0 form, so the wedge with one degenerates to the pointwise
+product (as in Python). There is deliberately no `wedge` on two `ScalarFunction`s:
+`f^g` already reads as a pointwise power, and `Base.:^(::ScalarFunction, ::Number)`
+is that power — writing `f * g` for the product keeps `^` unambiguous.
+"""
+wedge(f::ScalarFunction, ω::Form) = f * ω
+wedge(ω::Form, f::ScalarFunction) = ω * f
+
+"""
+    a ^ b -> Form
+
+The wedge product, spelled as in Python. `^` is otherwise unused on `Form`, and
+the pointwise power `Base.:^(::ScalarFunction, ::Number)` is a distinct method.
+Julia's `^` binds tighter than `+` and `*`, where Python's binds looser than both:
+`α ^ β + γ` is `(α ∧ β) + γ` here but `α ∧ (β + γ)` in Python.
+"""
+Base.:^(a::Form, b::Form) = wedge(a, b)
+Base.:^(f::ScalarFunction, ω::Form) = wedge(f, ω)
+Base.:^(ω::Form, f::ScalarFunction) = wedge(ω, f)
+
 # ── Tensor product of 1-forms → general (0,2)-tensor ───────────────────────────
-"""Tensor product of two 1-forms, `(α ⊗ β)_{ij} = α_i β_j`, giving a `Tensor02`."""
+"""
+Tensor product of two 1-forms, `(α ⊗ β)_{ij} = α_i β_j`, giving a `Tensor02`.
+This is *not* the wedge product — that is `wedge(α, β)`, or `α ^ β`.
+"""
 function Base.:*(a::Form, b::Form)
     dg = geometry(a)
     @assert dg === geometry(b) "Forms must be defined on the same DiffusionGeometry."
