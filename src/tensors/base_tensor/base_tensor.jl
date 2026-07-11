@@ -24,6 +24,21 @@ Base.:*(s::Number, t::AbstractTensor) = wrap(t.space, s .* t.coeffs)
 Base.:*(t::AbstractTensor, s::Number) = s * t
 Base.:/(t::AbstractTensor, s::Number) = wrap(t.space, t.coeffs ./ s)
 
+# ── Per-batch scalar weights ───────────────────────────────────────────────────
+# A plain numeric array is a bag of *batch-wise* scalars, never a coefficient
+# vector: its shape broadcasts (numpy right-alignment) against the tensor's batch
+# axes and the coefficient axis is left untouched. This is what makes a spectral
+# filter `exp.(-vals) * vecs` work on the batched eigenbasis from `spectrum`.
+function _scale_by_batch(t::AbstractTensor, w::AbstractArray{<:Number}, op)
+    @assert compatible_batches(batch_shape(t), size(w)) "Incompatible batch shapes: $(batch_shape(t)) vs $(size(w))"
+    ct, wt = align_batch_pair(t.coeffs, reshape(w, size(w)..., 1))
+    return wrap(t.space, op.(ct, wt))
+end
+
+Base.:*(w::AbstractArray{<:Number}, t::AbstractTensor) = _scale_by_batch(t, w, *)
+Base.:*(t::AbstractTensor, w::AbstractArray{<:Number}) = _scale_by_batch(t, w, *)
+Base.:/(t::AbstractTensor, w::AbstractArray{<:Number}) = _scale_by_batch(t, w, /)
+
 # A scalar added to a function is the constant function of that value, projected
 # onto the basis. Only functions absorb a scalar this way — the other tensors have
 # no canonical constant element, and `+`/`-` against a Number stays a MethodError.
