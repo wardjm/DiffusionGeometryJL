@@ -8,6 +8,13 @@
 """Pointwise data of a tensor at the sample points, shape `(batch..., n·C)`."""
 to_pointwise_basis(t::AbstractTensor) = _to_pointwise_basis(t.coeffs, t.space)
 
+# ── Display ────────────────────────────────────────────────────────────────────
+# Coefficients are deliberately not printed: a tensor carries one per basis
+# function per component, which swamps the REPL to no purpose.
+Base.show(io::IO, t::AbstractTensor) =
+    print(io, nameof(typeof(t)), "(space=", t.space, ", shape=", size(t.coeffs),
+          ", batch_shape=", batch_shape(t), ")")
+
 # ── Linear structure ───────────────────────────────────────────────────────────
 Base.:-(t::AbstractTensor) = wrap(t.space, -t.coeffs)
 

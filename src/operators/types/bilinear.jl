@@ -33,6 +33,11 @@ end
 component_shape(B::BilinearOperator) =
     (space_dim(B.codomain), space_dim(B.domain_a), space_dim(B.domain_b))
 
+function Base.show(io::IO, B::BilinearOperator)
+    print(io, "BilinearOperator(domain_a=", B.domain_a, ", domain_b=", B.domain_b,
+          ", codomain=", B.codomain, ", component_shape=", component_shape(B), ")")
+end
+
 """Weak-form component 3-tensor."""
 function weak(B::BilinearOperator)
     B._weak !== nothing && return B._weak

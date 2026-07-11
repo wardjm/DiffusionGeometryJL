@@ -72,6 +72,12 @@ function Base.zeros(space::AbstractTensorSpace, batch::Tuple=())
     return wrap(space, zeros(Float64, batch..., space_dim(space)))
 end
 
+# ── Display ────────────────────────────────────────────────────────────────────
+# Concrete spaces carrying extra structure (a form degree, a list of summands)
+# override this; everything else is just its name and its coefficient dimension.
+Base.show(io::IO, space::AbstractTensorSpace) =
+    print(io, nameof(typeof(space)), "(dim=", space_dim(space), ")")
+
 # ── Equality / hashing (used as cache keys) ────────────────────────────────────
 function Base.:(==)(a::AbstractTensorSpace, b::AbstractTensorSpace)
     a === b && return true

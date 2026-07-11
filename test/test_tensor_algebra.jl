@@ -111,4 +111,18 @@
         @test aeq(Xu.coeffs, X.coeffs)
         @test aeq(fu.coeffs, f.coeffs)
     end
+
+    @testset "show" begin
+        fs, vfs = function_space(dg), vector_field_space(dg)
+        @test repr(fs) == "FunctionSpace(dim=$(space_dim(fs)))"
+        @test repr(form_space(dg, 2)) == "FormSpace(degree=2, dim=$(space_dim(form_space(dg, 2))))"
+        @test repr(vfs + fs) ==
+              "DirectSumSpace(spaces=[VectorFieldSpace, FunctionSpace], dim=$(space_dim(vfs + fs)))"
+
+        # A tensor shows its space and batch shape, never its coefficients.
+        @test repr(w2) == "Form(space=$(repr(w2.space)), shape=$(size(w2.coeffs)), batch_shape=())"
+        batched = wrap(fs, zeros(3, space_dim(fs)))
+        @test repr(batched) ==
+              "ScalarFunction(space=$(repr(fs)), shape=(3, $(space_dim(fs))), batch_shape=(3,))"
+    end
 end

@@ -48,8 +48,8 @@ function LinearOperator(domain::AbstractTensorSpace, codomain::AbstractTensorSpa
 end
 
 function Base.show(io::IO, L::LinearOperator)
-    print(io, "LinearOperator($(typeof(L.domain)) → $(typeof(L.codomain)), ",
-          "shape=($(space_dim(L.codomain)), $(space_dim(L.domain))))")
+    print(io, "LinearOperator(domain=", L.domain, ", codomain=", L.codomain,
+          ", shape=(", space_dim(L.codomain), ", ", space_dim(L.domain), "))")
 end
 
 """Operator matrix in weak (bilinear-form) representation."""

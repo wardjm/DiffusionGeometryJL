@@ -25,6 +25,9 @@ end
 space_degree(space::FormSpace) = space.degree
 degree(f::Form) = f.space.degree
 
+Base.show(io::IO, space::FormSpace) =
+    print(io, "FormSpace(degree=", space.degree, ", dim=", space_dim(space), ")")
+
 cdc_components(space::FormSpace) = gamma_coords_compound(space.dg.cache, space.degree)[2]
 
 function wrap(space::FormSpace, coeffs::AbstractArray)
