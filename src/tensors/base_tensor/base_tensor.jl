@@ -27,6 +27,7 @@ Base.:/(t::AbstractTensor, s::Number) = wrap(t.space, t.coeffs ./ s)
 function _pointwise_product(t::AbstractTensor, f)
     dg = geometry(t)
     @assert dg === geometry(f) "Operands must belong to the same DiffusionGeometry."
+    @assert compatible_batches(batch_shape(t), batch_shape(f)) "Incompatible batch shapes"
     c = component_dim(t.space)
     n = npoints(dg)
     self_r = np_reshape(to_pointwise_basis(t), batch_shape(t)..., n, c)
@@ -38,6 +39,7 @@ end
 function _pointwise_divide(t::AbstractTensor, f)
     dg = geometry(t)
     @assert dg === geometry(f) "Operands must belong to the same DiffusionGeometry."
+    @assert compatible_batches(batch_shape(t), batch_shape(f)) "Incompatible batch shapes"
     c = component_dim(t.space)
     n = npoints(dg)
     eps = 1e-12

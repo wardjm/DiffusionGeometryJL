@@ -25,4 +25,7 @@ include("pysuite.jl")
     @testset "python tests/test_src" begin
         include("test_pysrc.jl")
     end
+    @testset "python tests/test_classes" begin
+        include("test_pyclasses.jl")
+    end
 end
