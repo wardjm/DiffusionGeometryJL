@@ -24,6 +24,17 @@ Base.:*(s::Number, t::AbstractTensor) = wrap(t.space, s .* t.coeffs)
 Base.:*(t::AbstractTensor, s::Number) = s * t
 Base.:/(t::AbstractTensor, s::Number) = wrap(t.space, t.coeffs ./ s)
 
+# A scalar added to a function is the constant function of that value, projected
+# onto the basis. Only functions absorb a scalar this way — the other tensors have
+# no canonical constant element, and `+`/`-` against a Number stays a MethodError.
+_constant_function(f::ScalarFunction, c::Number) =
+    dg_function(geometry(f), fill(c, npoints(geometry(f))))
+
+Base.:+(f::ScalarFunction, c::Number) = f + _constant_function(f, c)
+Base.:+(c::Number, f::ScalarFunction) = f + c
+Base.:-(f::ScalarFunction, c::Number) = f + (-c)
+Base.:-(c::Number, f::ScalarFunction) = (-f) + c
+
 # ── Pointwise products with a function ─────────────────────────────────────────
 function _pointwise_product(t::AbstractTensor, f)
     dg = geometry(t)
