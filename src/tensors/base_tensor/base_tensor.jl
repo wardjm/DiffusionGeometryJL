@@ -14,7 +14,8 @@ Base.:-(t::AbstractTensor) = wrap(t.space, -t.coeffs)
 function Base.:+(a::AbstractTensor, b::AbstractTensor)
     @assert a.space == b.space "Operands must belong to the same space: $(a.space) vs $(b.space)"
     @assert compatible_batches(batch_shape(a), batch_shape(b)) "Incompatible batch shapes"
-    return wrap(a.space, a.coeffs .+ b.coeffs)
+    ca, cb = align_batch_pair(a.coeffs, b.coeffs)
+    return wrap(a.space, ca .+ cb)
 end
 
 Base.:-(a::AbstractTensor, b::AbstractTensor) = a + (-b)
@@ -32,7 +33,8 @@ function _pointwise_product(t::AbstractTensor, f)
     n = npoints(dg)
     self_r = np_reshape(to_pointwise_basis(t), batch_shape(t)..., n, c)
     func_r = np_reshape(to_pointwise_basis(f), batch_shape(f)..., n, 1)
-    prod = self_r .* func_r
+    self_a, func_a = align_batch_pair(self_r, func_r; ntail=2)
+    prod = self_a .* func_a
     return wrap(t.space, _from_pointwise_basis(prod, t.space))
 end
 
@@ -46,7 +48,8 @@ function _pointwise_divide(t::AbstractTensor, f)
     denom = map(x -> abs(x) < eps ? oftype(x, eps) : x, to_pointwise_basis(f))
     self_r = np_reshape(to_pointwise_basis(t), batch_shape(t)..., n, c)
     func_r = np_reshape(denom, batch_shape(f)..., n, 1)
-    quotient = self_r ./ func_r
+    self_a, func_a = align_batch_pair(self_r, func_r; ntail=2)
+    quotient = self_a ./ func_a
     return wrap(t.space, _from_pointwise_basis(quotient, t.space))
 end
 

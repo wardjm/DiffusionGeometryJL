@@ -32,6 +32,7 @@ function metric_apply(space::FunctionSpace, a_coeffs, b_coeffs)
     bc = n_function_basis(space.dg)
     fa = _to_pointwise_basis(a_coeffs, space; basis_count=bc)
     fb = _to_pointwise_basis(b_coeffs, space; basis_count=bc)
+    fa, fb = align_batch_pair(fa, fb)
     return fa .* fb
 end
 
