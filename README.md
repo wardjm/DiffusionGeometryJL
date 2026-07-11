@@ -66,17 +66,23 @@ have:
 | Constructor | Input |
 |---|---|
 | `from_point_cloud(data)` | raw coordinates `(n × d)` — builds the kNN graph for you |
-| `from_knn_graph(indices, distances)` | a precomputed neighbour graph |
-| `from_knn_kernel(indices, kernel)` | a precomputed kernel on a neighbour graph |
+| `from_knn_graph(indices, distances; immersion_coords)` | a precomputed neighbour graph |
+| `from_knn_kernel(indices, kernel, immersion_coords)` | a precomputed kernel on a neighbour graph |
 | `from_edges(edge_index)` | an unweighted graph given by its `(2 × m)` edge list |
-| `from_graph_kernel(edge_index, kernel)` | a weighted graph kernel |
-| `from_sparse_matrix(A)` | a sparse transition/adjacency matrix |
+| `from_graph_kernel(edge_index, kernel, immersion_coords)` | a weighted graph kernel |
+| `from_sparse_matrix(A, immersion_coords)` | a sparse transition/adjacency matrix |
+
+Every constructor except `from_point_cloud` and `from_edges` needs the ambient
+coordinates supplied alongside the connectivity: as the third positional argument
+for `from_knn_kernel`, `from_graph_kernel`, and `from_sparse_matrix`, or as the
+`immersion_coords` keyword for `from_knn_graph` (which also accepts `data_matrix`).
+`from_edges` takes them as the optional `immersion_coords` keyword and works
+without them — so an edge list alone gets you the same geometry on data that never
+came from a metric space.
 
 Common keywords: `knn_kernel` (neighbours per point), `n_function_basis` (size of
-the diffusion eigenbasis), `n_coefficients` (retained coefficients per tensor
-field), and `immersion_coords` (supply ambient coordinates explicitly for a
-graph-only input). Graph and edge-list inputs let you do the same geometry on
-data that never came from a metric space.
+the diffusion eigenbasis), and `n_coefficients` (retained coefficients per tensor
+field, defaulting to `n_function_basis`).
 
 Query it:
 
@@ -91,12 +97,16 @@ measure(dg)          # the diffusion measure (n,)
 
 Wrap pointwise data as a typed field on the geometry:
 
+Each factory takes *pointwise* values — one row per point, with the field's
+components flattened along the trailing axis — and projects them onto the
+diffusion basis:
+
 ```julia
-f  = dg_function(dg, data[:, 1])          # ScalarFunction from pointwise values
-X  = dg_vector_field(dg, randn(200, 3))   # VectorField
-ω  = dg_form(dg, coeffs, 2)               # a 2-form
-T  = dg_tensor02(dg, coeffs)              # a (0,2)-tensor
-S  = dg_tensor02sym(dg, coeffs)           # a symmetric (0,2)-tensor
+f  = dg_function(dg, data[:, 1])            # ScalarFunction, from (n,) values
+X  = dg_vector_field(dg, randn(200, 3))     # VectorField, from (n, d) components
+ω  = dg_form(dg, randn(200, 3), 2)          # a 2-form, from (n, binomial(d, k))
+T  = dg_tensor02(dg, randn(200, 9))         # a (0,2)-tensor, from (n, d²)
+S  = dg_tensor02sym(dg, randn(200, 6))      # symmetric (0,2)-tensor, (n, d(d+1)/2)
 ```
 
 The field types — `ScalarFunction`, `VectorField`, `Form`, `Tensor02`,
@@ -106,9 +116,9 @@ The learned metric gives you geometry:
 
 ```julia
 g(dg, X, Y)          # pointwise inner product of two fields (n,)
-inner(X, Y)          # global L² inner product
-l2_norm(X)           # global L² norm
-pointwise_norm(X)    # pointwise norm (n,)
+inner(dg, X, Y)      # global L² inner product
+l2_norm(X)           # global L² norm       (or l2_norm(dg, X))
+pointwise_norm(X)    # pointwise norm (n,)  (or pointwise_norm(dg, X))
 ```
 
 ## Differential operators
@@ -119,36 +129,46 @@ Operator accessors take the geometry and return a `LinearOperator` or
 ```julia
 ∇f = grad(dg)(f)                    # gradient → VectorField
 Hf = hessian(dg)(f)                 # Hessian → symmetric (0,2)-tensor
-df = d(dg, 1)(ω)                    # exterior derivative of a k-form
-δω = codifferential(dg, 2)(ω)       # codifferential
+dω = d(dg, 2)(ω)                    # exterior derivative of the 2-form ω → 3-form
+δω = codifferential(dg, 2)(ω)       # codifferential → 1-form
 divX = divergence(dg)(X)            # divergence of a vector field
 ```
+
+The degree argument is the degree of the form the operator *consumes*, so it must
+match the field you apply it to: `d(dg, k) : Ωᵏ → Ωᵏ⁺¹` and
+`codifferential(dg, k) : Ωᵏ → Ωᵏ⁻¹`.
 
 Laplacians on `k`-forms, with spectra:
 
 ```julia
-up_laplacian(dg, k)     # d δ
-down_laplacian(dg, k)   # δ d
-laplacian(dg, k)        # Hodge Laplacian on k-forms
-spectrum(laplacian(dg, k))          # eigenvalues + eigenfunctions
+up_laplacian(dg, k)     # δ d
+down_laplacian(dg, k)   # d δ
+laplacian(dg, k)        # Hodge Laplacian δd + dδ on k-forms
+spectrum(laplacian(dg, k))          # (eigenvalues, eigenfunctions)
 inverse(laplacian(dg, 0))           # spectral (pseudo)inverse as an operator
 ```
 
 Curvature and other structure:
 
 ```julia
-lie_bracket(dg, X, Y)               # [X, Y]
-levi_civita(dg)                     # the connection
-riemann_curvature(dg)               # Riemann curvature operator
+levi_civita(dg)                     # the connection, as an operator 𝔛(M) → Ω⁰²(M)
+lie_bracket(dg)(X, Y)               # [X, Y] — lie_bracket(dg) is a BilinearOperator
+riemann_curvature(dg, X, Y, Z, W)   # R(X,Y,Z,W) pointwise (n,)
 sectional_curvature(dg, X, Y)       # pointwise sectional curvature (n,)
 ```
 
-There is convenience sugar directly on fields, too — `grad(f)`, `d(f)`, `d(ω)`,
-`laplacian(ω)`, the interior product `ω(X)`, and Hodge decomposition:
+There is convenience sugar directly on fields, too, which looks up the right
+operator from the field's own geometry and degree — `grad(f)`, `d(f)`, `d(ω)`,
+`laplacian(ω)`, the interior product `ω(X)` (1-forms only), and Hodge decomposition:
 
 ```julia
-harmonic, exact_potential, coexact_potential = hodge_decomposition(ω)
+exact_potential, coexact_potential, harmonic = hodge_decomposition(ω)
 ```
+
+so that `ω = d(exact_potential) + codifferential(coexact_potential) + harmonic`.
+At top degree there is no coexact part and `coexact_potential` is `nothing`. On a
+function the exact part is trivial, and `hodge_decomposition(f)` returns just
+`(coexact_potential, harmonic)`.
 
 ## Numerical methods
 
@@ -157,14 +177,18 @@ and exponentiating in the eigenbasis:
 
 ```julia
 ts  = range(0, 1; length=20)
-sol = solve_differential_operator(-laplacian(dg, 0), f, ts)   # f(t) for each t
+sol = solve_differential_operator(-laplacian(dg, 0), f, ts)
 ```
 
+`sol` is a field of the same type as `f`, batched over a leading time axis: its
+coefficients have shape `(length(ts), …)`, one solution per time.
+
 Estimate geodesic distances from a source point (a conic program solved with
-Convex.jl + SCS):
+Convex.jl + SCS). It returns the pointwise distances *and* the correction
+function it solved for:
 
 ```julia
-dists = geodesic_distances_function(dg, source_index)         # 1-based index
+dists, v = geodesic_distances_function(dg, source_index)      # 1-based index
 ```
 
 ## Topology (Betti numbers)
