@@ -3,6 +3,7 @@ using LinearAlgebra
 using DiffusionGeometryJ
 
 include("parity.jl")
+include("pysuite.jl")
 
 @testset "DiffusionGeometryJ" begin
     include("test_basis_utils.jl")
@@ -19,4 +20,12 @@ include("parity.jl")
     include("test_visualisation.jl")
     include("test_notebooks.jl")
     include("test_makie_ext.jl")
+
+    # Ports of the upstream Python suite (property tests, no fixtures).
+    @testset "python tests/test_src" begin
+        include("test_pysrc.jl")
+    end
+    @testset "python tests/test_classes" begin
+        include("test_pyclasses.jl")
+    end
 end
