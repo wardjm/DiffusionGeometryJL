@@ -19,9 +19,6 @@ function metric(u_n1::AbstractMatrix, matrices::AbstractArray{<:Any,3})
     return np_reshape(g, n, n1 * C, n1 * C)
 end
 
-@inline _expand_leading(x::AbstractArray, B::Integer) =
-    size(x, 1) == B ? x : repeat(x, outer=(B, ntuple(_ -> 1, ndims(x) - 1)...))
-
 # Apply a regularisation closure (which expects a leading point axis) to a
 # `(batch..., n)` array, transposing the point axis to the front and back.
 function _apply_regularise(f, mv::AbstractArray, batch::Tuple, n::Integer)
@@ -44,18 +41,19 @@ function _metric_apply(u_n1::AbstractMatrix, regularise_func, a_coeffs, b_coeffs
                        matrices::AbstractArray{<:Any,3})
     basis_count = size(u_n1, 2)
     C = size(matrices, 2)
+    n = size(u_n1, 1)
     a_flat, batch_a = flatten_batch_dims(a_coeffs)
     b_flat, batch_b = flatten_batch_dims(b_coeffs)
     a_view = np_reshape(a_flat, size(a_flat, 1), basis_count, C)
     b_view = np_reshape(b_flat, size(b_flat, 1), basis_count, C)
     a_point = ein"pi,bic->bpc"(u_n1, a_view)            # (Ba, n, C)
     b_point = ein"pi,bic->bpc"(u_n1, b_view)            # (Bb, n, C)
-    target = Base.Broadcast.broadcast_shape(batch_a, batch_b)
+    target = broadcast_batch_shape(batch_a, batch_b)
     B = prod(target; init=1)
-    ap = _expand_leading(a_point, B)
-    bp = _expand_leading(b_point, B)
+    # Evaluate pointwise first, then broadcast the (smaller) point data to the target batch.
+    ap = broadcast_flatten_batch(np_reshape(a_point, batch_a..., n, C), target; ntail=2)
+    bp = broadcast_flatten_batch(np_reshape(b_point, batch_b..., n, C), target; ntail=2)
     metric_vals = optein"bpc,pcd,bpd->bp"(ap, matrices, bp)   # (B, n)
-    n = size(u_n1, 1)
     mv = np_reshape(metric_vals, target..., n)
     return _apply_regularise(regularise_func, mv, target, n)
 end

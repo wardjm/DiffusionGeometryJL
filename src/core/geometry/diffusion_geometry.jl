@@ -215,12 +215,9 @@ function inner(dg::DiffusionGeometry, a::AbstractTensor, b::AbstractTensor)
     @assert a.space == b.space "Spaces $(a.space) vs $(b.space) do not match"
     @assert compatible_batches(batch_shape(a), batch_shape(b)) "Incompatible batch shapes"
     G = gram(a.space)
-    af, batch_a = flatten_batch_dims(a.coeffs)
-    bf, batch_b = flatten_batch_dims(b.coeffs)
-    target = Base.Broadcast.broadcast_shape(batch_a, batch_b)
-    B = prod(target; init=1)
-    afe = _expand_leading(af, B)
-    bfe = _expand_leading(bf, B)
+    target = broadcast_batch_shape(batch_shape(a), batch_shape(b))
+    afe = broadcast_flatten_batch(a.coeffs, target)
+    bfe = broadcast_flatten_batch(b.coeffs, target)
     res = optein"AB,cA,cB->c"(G, afe, bfe)          # (B,)
     isempty(target) && return res[1]
     return np_reshape(res, target...)

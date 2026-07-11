@@ -69,14 +69,11 @@ function (α::Tensor02)(X::VectorField, Y::VectorField)
     U = function_basis(dg)[:, 1:n1]
     Gamma = gamma_coords(dg.cache)
 
-    Af, ba = flatten_batch_dims(α.coeffs)
-    Xf, bx = flatten_batch_dims(X.coeffs)
-    Yf, by = flatten_batch_dims(Y.coeffs)
-    target = Base.Broadcast.broadcast_shape(ba, bx, by)
+    target = broadcast_batch_shape(batch_shape(α), batch_shape(X), batch_shape(Y))
     B = prod(target; init=1)
-    A = np_reshape(_expand_leading(Af, B), B, n1, d, d)
-    Xc = np_reshape(_expand_leading(Xf, B), B, n1, d)
-    Yc = np_reshape(_expand_leading(Yf, B), B, n1, d)
+    A = np_reshape(broadcast_flatten_batch(α.coeffs, target), B, n1, d, d)
+    Xc = np_reshape(broadcast_flatten_batch(X.coeffs, target), B, n1, d)
+    Yc = np_reshape(broadcast_flatten_batch(Y.coeffs, target), B, n1, d)
     # e = batch axis (broadcast/diagonal), p = point axis.
     res = optein"eabc,eij,eIJ,pa,pi,pI,pbj,pcJ->ep"(A, Xc, Yc, U, U, U, Gamma, Gamma)  # (B, n)
     mv = np_reshape(res, target..., n)

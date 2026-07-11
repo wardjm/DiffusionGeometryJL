@@ -34,15 +34,16 @@ using SparseArrays: sparse, findnz
         @test compatible_batches((1,), (5,))
         @test compatible_batches((), (5,))
 
-        # DIVERGENCE: numpy aligns broadcast dimensions from the *right*, so a (3,4)
-        # batch and a (4,) batch are compatible. Julia's whole tensor layer aligns from
-        # the left (`Base.Broadcast.broadcast_shape`), so it rejects them — despite
-        # compatible_batches' docstring claiming numpy `broadcast_shapes` semantics.
-        # Single-axis batches agree, which is why nothing else catches this.
-        @test_broken compatible_batches((3, 4), (4,))
+        # Batch axes align from the right, as in numpy: a (3,4) batch and a (4,) batch
+        # broadcast to (3,4). (Julia's own `Base.Broadcast` aligns from the left and
+        # would reject this pair — see `broadcast_batch_shape`.)
+        @test compatible_batches((3, 4), (4,))
+        @test compatible_batches((4,), (3, 4))
+        @test compatible_batches((3, 1), (3, 4))
 
         @test !compatible_batches((5,), (6,))
         @test !compatible_batches((2, 3), (3, 2))
+        @test !compatible_batches((3, 4), (3,))
     end
 
     # Upstream drives these through a MockDiffusionGeometry subclass; a real geometry
@@ -78,11 +79,68 @@ using SparseArrays: sparse, findnz
             end
         end
 
+        # A (3,4) batch against a (4,) batch: the right-aligned rule must hold end to
+        # end, so each (i, j) slice of the result equals the unbatched computation on
+        # slice (i, j) of the first operand and slice j of the second.
+        @testset "multi-axis batch broadcasting" begin
+            fd = rand(3, 4, n)
+            hd = rand(4, n)
+            f = dg_function(dg, fd)
+            h = dg_function(dg, hd)
+
+            for (op, name) in ((+, "+"), (*, "*"), (/, "/"))
+                res = op(f, h)
+                @test batch_shape(res) == (3, 4)
+                for i in 1:3, j in 1:4
+                    expect = op(dg_function(dg, fd[i, j, :]), dg_function(dg, hd[j, :]))
+                    @test coeffs(res)[i, j, :] ≈ coeffs(expect) atol = 1e-8
+                end
+            end
+
+            # FunctionSpace has its own metric_apply — it must right-align too.
+            @test size(g(dg, f, h)) == (3, 4, n)
+            for i in 1:3, j in 1:4
+                expect = g(dg, dg_function(dg, fd[i, j, :]), dg_function(dg, hd[j, :]))
+                @test g(dg, f, h)[i, j, :] ≈ expect atol = 1e-8
+            end
+
+            v = dg_vector_field(dg, rand(3, 4, n, dim))
+            w = dg_vector_field(dg, rand(4, n, dim))
+            @test size(g(dg, v, w)) == (3, 4, n)
+            @test size(inner(dg, v, w)) == (3, 4)
+            vc, wc = coeffs(v), coeffs(w)
+            for i in 1:3, j in 1:4
+                vij = wrap(vector_field_space(dg), vc[i, j, :])
+                wj = wrap(vector_field_space(dg), wc[j, :])
+                @test g(dg, v, w)[i, j, :] ≈ g(dg, vij, wj) atol = 1e-8
+                @test inner(dg, v, w)[i, j] ≈ inner(dg, vij, wj) atol = 1e-8
+            end
+
+            if dim >= 2
+                a = wrap(form_space(dg, 1), rand(3, 4, n1 * dim))
+                b = wrap(form_space(dg, 1), rand(4, n1 * dim))
+                joined = wedge(a, b)
+                @test batch_shape(joined) == (3, 4)
+                ac, bc = coeffs(a), coeffs(b)
+                for i in 1:3, j in 1:4
+                    expect = wedge(wrap(form_space(dg, 1), ac[i, j, :]),
+                                   wrap(form_space(dg, 1), bc[j, :]))
+                    @test coeffs(joined)[i, j, :] ≈ coeffs(expect) atol = 1e-8
+                end
+                tp = a * b
+                @test batch_shape(tp) == (3, 4)
+            end
+        end
+
         @testset "incompatible batch shapes" begin
             f1 = dg_function(dg, rand(5, n))
             f3 = dg_function(dg, rand(6, n))
             @test_throws AssertionError f1 + f3
             @test_throws AssertionError g(dg, f1, f3)
+
+            f4 = dg_function(dg, rand(3, 4, n))
+            f5 = dg_function(dg, rand(3, n))
+            @test_throws AssertionError f4 + f5
         end
     end
 end

@@ -61,12 +61,9 @@ function full_apply(B::BilinearOperator, x::AbstractTensor, y::AbstractTensor)
     @assert x.space == B.domain_a "Domain A mismatch"
     @assert y.space == B.domain_b "Domain B mismatch"
     @assert compatible_batches(batch_shape(x), batch_shape(y)) "Batch shape mismatch"
-    xf, bx = flatten_batch_dims(x.coeffs)
-    yf, by = flatten_batch_dims(y.coeffs)
-    target = Base.Broadcast.broadcast_shape(bx, by)
-    nb = prod(target; init=1)
-    xe = _expand_leading(xf, nb)
-    ye = _expand_leading(yf, nb)
+    target = broadcast_batch_shape(batch_shape(x), batch_shape(y))
+    xe = broadcast_flatten_batch(x.coeffs, target)
+    ye = broadcast_flatten_batch(y.coeffs, target)
     val = optein"iAB,bA,bB->bi"(strong(B), xe, ye)      # (nb, codim)
     return wrap(B.codomain, restore_batch_dims(val, target))
 end
