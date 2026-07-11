@@ -32,6 +32,11 @@ end
 
 space_dim(ds::DirectSumSpace) = sum(space_dim(s) for s in ds.spaces)
 
+function Base.show(io::IO, ds::DirectSumSpace)
+    parts = join((nameof(typeof(s)) for s in ds.spaces), ", ")
+    print(io, "DirectSumSpace(spaces=[", parts, "], dim=", space_dim(ds), ")")
+end
+
 # Offset ranges for splitting the coefficient vector into summands.
 function _coeff_ranges(ds::DirectSumSpace)
     ranges = UnitRange{Int}[]

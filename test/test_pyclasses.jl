@@ -5,8 +5,7 @@
 # error paths. It runs over the same d = 1..4 config sweep (see pysuite.jl).
 #
 # Purely Python-shaped tests are skipped with a note where they appear: numpy ufunc
-# dispatch (`np.multiply(..., where=...)`), `repr` string contents (Julia defines
-# `show` only for LinearOperator), the numpy RuntimeWarning check, and the
+# dispatch (`np.multiply(..., where=...)`), the numpy RuntimeWarning check, and the
 # `MockDiffusionGeometry` subclass (Julia has no subclassing; the behaviours it
 # probes are exercised against a real geometry instead).
 
@@ -521,8 +520,12 @@ end
             @test coeffs(components[2]) ≈ c2
         end
 
-        # Upstream also asserts on `repr(element)`. Julia defines `show` only for
-        # LinearOperator, so there is no equivalent to check.
+        @testset "repr includes space" begin
+            rep = repr(zeros(s1 + s2))
+            @test occursin("DirectSumElement(", rep)
+            @test occursin("space=DirectSumSpace(", rep)
+            @test occursin("spaces=[FunctionSpace, VectorFieldSpace]", rep)
+        end
     end
 end
 
@@ -782,10 +785,16 @@ end
                 @test coeffs(out) ≈ expected
             end
         end
+
+        @testset "repr includes spaces" begin
+            rep = repr(identity_operator(sp))
+            @test occursin("LinearOperator(", rep)
+            @test occursin("domain=FunctionSpace(dim=", rep)
+            @test occursin("codomain=FunctionSpace(dim=", rep)
+        end
     end
 
-    # Skipped: `repr(op)` contents (Julia's `show` for LinearOperator has a different
-    # format), and the numpy RuntimeWarning check, which has no Julia analogue.
+    # Skipped: the numpy RuntimeWarning check, which has no Julia analogue.
 end
 
 # ── test_operators_spectral.py ────────────────────────────────────────────────
@@ -1201,7 +1210,13 @@ end
             @test coeffs(B(x, y)) ≈ coeffs(Bt(y, x))
         end
 
-        # Skipped: `repr(B)` contents — Julia defines no `show` for BilinearOperator.
+        @testset "repr includes domains" begin
+            rep = repr(lie_bracket(dg))
+            @test occursin("BilinearOperator(", rep)
+            @test occursin("domain_a=VectorFieldSpace(dim=", rep)
+            @test occursin("domain_b=VectorFieldSpace(dim=", rep)
+            @test occursin("codomain=VectorFieldSpace(dim=", rep)
+        end
     end
 end
 
