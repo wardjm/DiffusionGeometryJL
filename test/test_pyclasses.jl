@@ -4,11 +4,6 @@
 # wrappers, batching/broadcasting, direct sums, spectral operators, transposes and
 # error paths. It runs over the same d = 1..4 config sweep (see pysuite.jl).
 #
-# One upstream behaviour exercised here has no Julia implementation, and is
-# recorded as @test_broken rather than dropped — it will flip to a failure the day
-# someone adds it: scaling a batched tensor by a *vector* of per-batch scalars
-# (Python's `weights * omega`, weights of length B).
-#
 # Purely Python-shaped tests are skipped with a note where they appear: numpy ufunc
 # dispatch (`np.multiply(..., where=...)`), `repr` string contents (Julia defines
 # `show` only for LinearOperator), the numpy RuntimeWarning check, and the
@@ -913,6 +908,7 @@ end
             # Weights that no batch axis can absorb are an error, never a silent
             # match against the coefficient axis.
             @test_throws AssertionError randn(B + 1) * ωb
+            @test_throws AssertionError ωb / randn(B + 1)
         end
 
         @testset "function-form product" begin
