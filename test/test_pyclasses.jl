@@ -4,14 +4,10 @@
 # wrappers, batching/broadcasting, direct sums, spectral operators, transposes and
 # error paths. It runs over the same d = 1..4 config sweep (see pysuite.jl).
 #
-# Two upstream behaviours have no Julia implementation and are recorded as
-# @test_broken rather than dropped — they will flip to a failure the day someone
-# adds them:
-#
-#   1. `ScalarFunction ± Number` (Python's `f + 5`, meaning "add the constant
-#      function"). Julia defines `*`/`/` against a Number but not `+`/`-`.
-#   2. Scaling a batched tensor by a *vector* of per-batch scalars
-#      (Python's `weights * omega`, weights of length B).
+# One upstream behaviour exercised here has no Julia implementation, and is
+# recorded as @test_broken rather than dropped — it will flip to a failure the day
+# someone adds it: scaling a batched tensor by a *vector* of per-batch scalars
+# (Python's `weights * omega`, weights of length B).
 #
 # Purely Python-shaped tests are skipped with a note where they appear: numpy ufunc
 # dispatch (`np.multiply(..., where=...)`), `repr` string contents (Julia defines
@@ -1025,22 +1021,48 @@ end
                 @test_throws AssertionError op(f, T)
                 @test_throws AssertionError op(v, f)
 
-                # Non-Function tensors cannot absorb a scalar.
+                # Non-Function tensors cannot absorb a scalar, in either order.
                 @test_throws MethodError op(v, 3.0)
                 @test_throws MethodError op(ω, 3.0)
                 @test_throws MethodError op(T, 3.0)
+                @test_throws MethodError op(3.0, v)
+                @test_throws MethodError op(3.0, ω)
+                @test_throws MethodError op(3.0, T)
             end
 
             @test coeffs(-v) ≈ -coeffs(v)
         end
 
-        # GAP: Python defines `Function ± scalar` as adding the constant function.
+        # `Function ± scalar` adds/subtracts the constant function.
         @testset "function plus scalar" begin
             f = wrap(fs, rand(n0))
-            @test_broken (f + 3.5) isa ScalarFunction
-            @test_broken (3.5 + f) isa ScalarFunction
-            @test_broken (f - 3.5) isa ScalarFunction
-            @test_broken (3.5 - f) isa ScalarFunction
+            c = 3.5
+            const_c = dg_function(dg, fill(c, n))
+
+            @test (f + c) isa ScalarFunction
+            @test (c + f) isa ScalarFunction
+            @test (f - c) isa ScalarFunction
+            @test (c - f) isa ScalarFunction
+
+            @test coeffs(f + c) ≈ coeffs(f) .+ coeffs(const_c)
+            @test coeffs(c + f) ≈ coeffs(f + c)
+            @test coeffs(f - c) ≈ coeffs(f) .- coeffs(const_c)
+            @test coeffs(c - f) ≈ coeffs(const_c) .- coeffs(f)
+
+            # φ₀ is the constant Perron eigenfunction, so the constant function
+            # lands entirely in the first coefficient.
+            diff = coeffs(f + c) .- coeffs(f)
+            @test diff[1] ≈ c * sqrt(sum(measure(dg))) rtol = 1e-6
+            @test all(isapprox.(diff[2:end], 0.0; atol=1e-8))
+
+            # Batched functions absorb a scalar too: the unbatched constant
+            # broadcasts across every batch row, in both operand orders.
+            fb = wrap(fs, randn(Xoshiro(0), 3, n0))
+            cb = reshape(coeffs(const_c), 1, :)
+            @test coeffs(fb + c) ≈ coeffs(fb) .+ cb
+            @test coeffs(c + fb) ≈ coeffs(fb) .+ cb
+            @test coeffs(fb - c) ≈ coeffs(fb) .- cb
+            @test coeffs(c - fb) ≈ cb .- coeffs(fb)
         end
 
         @testset "exhaustive products" begin
