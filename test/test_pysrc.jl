@@ -176,7 +176,7 @@ end
         # Upstream asserts only the shape here — its value check is commented out
         # (`NOTE: Disabling strict value check`). The check is enabled below; the
         # expectation upstream compares against is the thing that is wrong, not the
-        # builder. See docs/upstream-bugs.md §5.
+        # builder. See docs/src/upstream-bugs.md §5.
         @testset "hessian_02_sym_weak matrix" begin
             H_weak = weak(hessian(dg))
             @test size(H_weak) == (n1 * d_sym, n0)

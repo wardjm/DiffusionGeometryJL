@@ -107,3 +107,34 @@ deliberately absent:
 - **`overpic_labels`**, which emitted LaTeX `\put` coordinates for subplot centres,
   is a LaTeX-layout helper with no Makie analogue — Makie lays out figures with
   `GridLayout` and places text with `Label`.
+
+## API
+
+```@meta
+CurrentModule = DiffusionGeometryJ
+```
+
+The plot functions have no methods until a Makie backend is loaded, so their examples
+are shown rather than run.
+
+```@docs
+dgplot
+dgplot!
+dgscatter
+dgscatter!
+dgquiver
+dgquiver!
+dg2form
+dg2form!
+dg3form
+dg3form!
+dgellipsoids
+dgellipsoids!
+dgeiglines
+dgeiglines!
+dgtangentplanes
+dgtangentplanes!
+dganimate
+DIVERGING_COLORMAP
+CYCLIC_COLORMAP
+```

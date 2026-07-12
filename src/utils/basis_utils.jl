@@ -12,6 +12,21 @@ using Combinatorics: combinations, with_replacement_combinations
 
 Multi-indices for the symmetric (0,2)-tensor basis: `combinations_with_replacement(1:d, 2)`.
 Shape `(d*(d+1)÷2, 2)`, rows in lexicographic order.
+
+Row `a` names the basis element `dx_j ⊙ dx_k`, so it is the layout the symmetric
+coefficients of a [`Tensor02Sym`](@ref) are stored in.
+
+# Examples
+```jldoctest
+julia> get_symmetric_basis_indices(3)
+6×2 Matrix{Int64}:
+ 1  1
+ 1  2
+ 1  3
+ 2  2
+ 2  3
+ 3  3
+```
 """
 function get_symmetric_basis_indices(d::Integer)
     rows = collect(with_replacement_combinations(1:d, 2))
@@ -23,6 +38,24 @@ end
 
 Multi-indices for the degree-`k` wedge basis: `combinations(1:d, k)`.
 Shape `(binomial(d, k), k)`, rows in lexicographic order.
+
+Row `a` names the basis k-form `dx_{J₁} ∧ … ∧ dx_{J_k}`, which is the component
+order a [`Form`](@ref) of degree `k` stores its coefficients in.
+
+# Examples
+```jldoctest
+julia> get_wedge_basis_indices(3, 2)          # dx₁∧dx₂, dx₁∧dx₃, dx₂∧dx₃
+3×2 Matrix{Int64}:
+ 1  2
+ 1  3
+ 2  3
+
+julia> size(get_wedge_basis_indices(4, 2))    # binomial(4, 2) basis elements
+(6, 2)
+
+julia> get_wedge_basis_indices(3, 0)          # the (single) empty combination
+1×0 Matrix{Int64}
+```
 """
 function get_wedge_basis_indices(d::Integer, k::Integer)
     k == 0 && return Matrix{Int}(undef, 1, 0)
@@ -39,6 +72,21 @@ end
 Lexicographic rank (1-based) of strictly-increasing `k`-combinations drawn from
 `1:n`. `idx` is either a length-`k` vector (returns an `Int`) or an `(m, k)`
 matrix of such combinations (returns a length-`m` vector).
+
+The inverse of [`get_wedge_basis_indices`](@ref): it maps a multi-index back to the
+row of the wedge basis that holds it.
+
+# Examples
+```jldoctest
+julia> lex_rank([1, 3], 3)            # dx₁∧dx₃ is the 2nd basis 2-form of ℝ³
+2
+
+julia> lex_rank(get_wedge_basis_indices(3, 2), 3)   # the basis ranks itself, in order
+3-element Vector{Int64}:
+ 1
+ 2
+ 3
+```
 """
 function lex_rank(idx::AbstractVector{<:Integer}, n::Integer)
     k = length(idx)
@@ -64,6 +112,34 @@ Indices and signs for the wedge product of a `k1`-form and a `k2`-form:
 `dx_I ∧ dx_J = sgn * dx_K`. `target`, `left`, `right` are 1-based ranks into the
 degree-`(k1+k2)`, `k1`, and `k2` wedge bases respectively; `signs` are `±1`.
 Returns empty vectors when `k1 + k2 > d`.
+
+This is the sparse contraction [`wedge`](@ref) runs: each entry says "component
+`left` of α times component `right` of β, signed, accumulates into component
+`target` of α ∧ β".
+
+# Examples
+Wedging two 1-forms in ℝ³. Target 1 is `dx₁∧dx₂`, and it collects `α₁β₂ - α₂β₁` —
+the antisymmetry is in the signs:
+
+```jldoctest
+julia> target, left, right, signs = get_wedge_product_indices(3, 1, 1);
+
+julia> [target left right Int.(signs)]
+6×4 Matrix{Int64}:
+ 1  1  2   1
+ 1  2  1  -1
+ 2  1  3   1
+ 2  3  1  -1
+ 3  2  3   1
+ 3  3  2  -1
+```
+
+Beyond the top degree there is nothing to build:
+
+```jldoctest
+julia> get_wedge_product_indices(2, 1, 2)     # a 3-form in ℝ² is zero
+(Int64[], Int64[], Int64[], Int8[])
+```
 """
 function get_wedge_product_indices(d::Integer, k1::Integer, k2::Integer)
     ktot = k1 + k2
@@ -110,6 +186,31 @@ end
 Expand symmetric (0,2)-tensor coefficients (last axis `n1 · d_sym`,
 `d_sym = d(d+1)/2`) to the full `n1 · d²` basis, mirroring each off-diagonal
 component onto its transpose. Leading axes are treated as batch dims.
+
+The coefficient-level machinery behind [`full_tensor`](@ref); left-inverted by
+[`symmetrise_tensor_coeffs`](@ref).
+
+# Examples
+In `d = 2` the symmetric components `(T₁₁, T₁₂, T₂₂)` become the four components of
+the full tensor, with `T₁₂` copied into the `T₂₁` slot:
+
+```jldoctest
+julia> expand_symmetric_tensor_coeffs([1.0, 2.0, 3.0], 1, 2)
+4-element Vector{Float64}:
+ 1.0
+ 2.0
+ 2.0
+ 3.0
+```
+
+Leading axes are batch dims, so a stack of tensors expands in one call:
+
+```jldoctest
+julia> expand_symmetric_tensor_coeffs([1.0 2.0 3.0; 4.0 5.0 6.0], 1, 2)
+2×4 Matrix{Float64}:
+ 1.0  2.0  2.0  3.0
+ 4.0  5.0  5.0  6.0
+```
 """
 function expand_symmetric_tensor_coeffs(coeffs::AbstractArray, n_coefficients::Integer, d::Integer)
     n1 = n_coefficients
@@ -139,6 +240,30 @@ end
 Project full (0,2)-tensor coefficients (last axis `n1 · d²`) onto the symmetric
 subspace, returning `n1 · d_sym` coefficients. Off-diagonal components average
 `(T_{jk} + T_{kj})/2`. Leading axes are batch dims.
+
+The coefficient-level machinery behind [`symmetrise`](@ref).
+
+# Examples
+The full `d = 2` tensor `[1 2; 3 4]` (row-major) symmetrises to `(1, 2.5, 4)`:
+
+```jldoctest
+julia> symmetrise_tensor_coeffs([1.0, 2.0, 3.0, 4.0], 1, 2)
+3-element Vector{Float64}:
+ 1.0
+ 2.5
+ 4.0
+```
+
+It is a left inverse of [`expand_symmetric_tensor_coeffs`](@ref) — expanding, then
+symmetrising, is the identity on symmetric coefficients:
+
+```jldoctest
+julia> symmetrise_tensor_coeffs(expand_symmetric_tensor_coeffs([1.0, 2.0, 3.0], 1, 2), 1, 2)
+3-element Vector{Float64}:
+ 1.0
+ 2.0
+ 3.0
+```
 """
 function symmetrise_tensor_coeffs(coeffs::AbstractArray, n_coefficients::Integer, d::Integer)
     n1 = n_coefficients
@@ -169,6 +294,34 @@ end
 For degree `k` (`1 ≤ k ≤ d-1`): the degree-`k` and degree-`(k+1)` wedge bases,
 plus `children[Jp, r]` = the 1-based rank in `idx_k` of `Jp` with its `r`-th entry
 removed, and the alternating Laplace-expansion `signs = (-1)^r`.
+
+This is the combinatorial skeleton of the exterior derivative: `(dω)_{Jp}` sums the
+`k`-form components of the children of `Jp`, signed alternately.
+
+# Examples
+The children of the basis 2-forms of ℝ³. Dropping an entry of `Jp = (1, 2)` leaves
+`(2)` (rank 2) or `(1)` (rank 1), which enter with signs `+1` and `-1`:
+
+```jldoctest
+julia> idx_k, idx_kp1, children, signs = kp1_children_and_signs(3, 1);
+
+julia> idx_kp1                    # the 2-forms dx₁∧dx₂, dx₁∧dx₃, dx₂∧dx₃
+3×2 Matrix{Int64}:
+ 1  2
+ 1  3
+ 2  3
+
+julia> children                   # the 1-form rank left after dropping entry r
+3×2 Matrix{Int64}:
+ 2  1
+ 3  1
+ 3  2
+
+julia> signs
+2-element Vector{Int64}:
+  1
+ -1
+```
 """
 function kp1_children_and_signs(d::Integer, k::Integer)
     @assert 1 <= k <= d - 1 "Form degree k=$k must be between 1 and $(d-1)"
@@ -193,7 +346,35 @@ end
 
 All `k!` permutations of `1:k`, as rows of a `(k!, k)` matrix in lexicographic
 order, together with their parities `(-1)^{inversions}`. Used to expand a k-form's
-wedge-basis coefficients into a fully antisymmetric `(d,…,d)` tensor.
+wedge-basis coefficients into a fully antisymmetric `(d,…,d)` tensor (see
+[`to_ambient`](@ref)).
+
+The parity counts *inversions*, so the identity permutation always carries `+1`.
+(The Python reference counts concordant pairs instead, which flips the sign of the
+whole polyvector for `k ≡ 2, 3 (mod 4)`; see `docs/src/upstream-bugs.md`.)
+
+# Examples
+```jldoctest
+julia> perms, signs = permutations_with_signs(3);
+
+julia> perms
+6×3 Matrix{Int64}:
+ 1  2  3
+ 1  3  2
+ 2  1  3
+ 2  3  1
+ 3  1  2
+ 3  2  1
+
+julia> signs                       # (1 2 3) is even; one transposition is odd
+6-element Vector{Int64}:
+  1
+ -1
+ -1
+  1
+  1
+ -1
+```
 """
 function permutations_with_signs(k::Integer)
     k == 0 && return zeros(Int, 1, 0), Int[1]

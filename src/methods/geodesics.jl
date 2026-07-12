@@ -30,6 +30,32 @@ Laplacian. Returns the pointwise distances `dist` (length `n`) and the correctio
 
 `index` is 1-based. `num_subsample` (or `nothing` for all points) sets how many
 random points carry the pointwise Lipschitz constraint.
+
+Requires a `data_matrix` on the triple (so: a geometry built from a point cloud), and
+solves a second-order cone program with SCS — this is much slower than the rest of the
+package, and its accuracy is bounded by the resolution of the function basis.
+
+# Examples
+Distance along the circle from point 1. The exact answer is the arc length, `min(θ,
+2π - θ)`: zero at the source, and maximal at the antipode (point 31 of 60), where the
+true value is `π ≈ 3.14`. The 8-mode basis under-resolves the cone at the source, so
+the far side comes out short — the shape is right, the scale is approximate:
+
+```jldoctest
+julia> dist, v = geodesic_distances_function(dg, 1);
+
+julia> size(dist), v
+((60,), ScalarFunction(space=FunctionSpace(dim=8), shape=(8,), batch_shape=()))
+
+julia> round(dist[1]; digits=6)          # d(x, x) = 0, imposed as a constraint
+0.0
+
+julia> argmax(dist)                      # farthest point: the antipode
+31
+
+julia> round(maximum(dist); digits=1)    # π = 3.14, under-resolved by the basis
+2.7
+```
 """
 function geodesic_distances_function(dg::DiffusionGeometry, index::Integer;
                                      reg::Bool=false, num_subsample=nothing,

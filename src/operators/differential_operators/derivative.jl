@@ -11,6 +11,22 @@ Weak exterior derivative matrix `d^{(k),weak}`, of shape
 
 `⟨ d(φ_i dx_J), φ_I dx_{J'} ⟩ = ∫ φ_I det(Γ(dφ_i | dx_J, dx_{J'})) dμ`.
 
+The assembler behind [`grad`](@ref) (`k = 0`) and [`d`](@ref) (`k ≥ 1`) — reach for
+those unless you are building an operator by hand.
+
+# Examples
+```jldoctest
+julia> W = derivative_weak(function_basis(dg), gamma_mixed(dg.cache), nothing,
+                           measure(dg), 0, n_coefficients(dg));
+
+julia> size(W)                       # (n_coefficients · d, n_function_basis)
+(16, 8)
+
+julia> W ≈ weak(grad(dg))            # exactly what the operator carries
+true
+```
+
+# Arguments
 - `u` `(n, n0)`: coefficient functions φ.
 - `gamma_mixed` `(n, d, n_function_basis)`: `Γ(x_j, φ_i)`.
 - `compound_matrices_k` `(n, Ck, Ck)`: `det(Γ(x_J, x_{J'}))` (needed for `k > 0`).

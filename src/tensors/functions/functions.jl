@@ -5,12 +5,53 @@
 # expanded in the full coefficient basis {φ_i} (n_function_basis columns), so they
 # use their own `basis_count` and `component_dim = 1`.
 
-"""Space of scalar functions A ≅ L²(M, μ)."""
+"""
+    FunctionSpace(dg)
+
+Space of scalar functions `A ≅ L²(M, μ)`. Unlike the other spaces it expands in the
+*full* eigenfunction basis (`n_function_basis` coefficients, not `n_coefficients`), and
+its metric is just the pointwise product — there is nothing to contract.
+
+Get it with [`function_space`](@ref) rather than constructing one.
+
+# Examples
+```jldoctest
+julia> function_space(dg)
+FunctionSpace(dim=8)
+
+julia> component_dim(function_space(dg)), space_dim(function_space(dg))
+(1, 8)
+
+julia> gram(function_space(dg)) ≈ I        # the eigenfunctions are L²-orthonormal
+true
+```
+"""
 struct FunctionSpace <: AbstractTensorSpace
     dg::DiffusionGeometry
 end
 
-"""A scalar function `f ∈ A`, coefficients in the basis {φ_i}."""
+"""
+    ScalarFunction
+
+A scalar function `f ∈ A`, stored as coefficients in the eigenfunction basis `{φ_i}`.
+Build one with [`dg_function`](@ref); get its values back with
+[`to_pointwise_basis`](@ref).
+
+Functions are the scalars of this algebra: multiplying any tensor by one is the
+pointwise product, and `+`/`-` against a `Number` adds a constant function.
+
+# Examples
+```jldoctest
+julia> f
+ScalarFunction(space=FunctionSpace(dim=8), shape=(8,), batch_shape=())
+
+julia> degree(f)                     # a function is a 0-form
+0
+
+julia> grad(f), d(f), laplacian(f)
+(VectorField(space=VectorFieldSpace(dim=16), shape=(16,), batch_shape=()), Form(space=FormSpace(degree=1, dim=16), shape=(16,), batch_shape=()), ScalarFunction(space=FunctionSpace(dim=8), shape=(8,), batch_shape=()))
+```
+"""
 struct ScalarFunction{A<:AbstractArray} <: AbstractTensor
     space::FunctionSpace
     coeffs::A

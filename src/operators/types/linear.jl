@@ -14,7 +14,19 @@ using LinearAlgebra: Hermitian, eigen, I
     real_if_close(A; tol=100) -> Array
 
 Return the real part of `A` if every imaginary component is within `tol·eps`
-(numpy `real_if_close` semantics), otherwise return `A` unchanged.
+(numpy `real_if_close` semantics), otherwise return `A` unchanged. Used to clean up the
+round-off imaginary parts an eigensolver leaves on a spectrum that is really real.
+
+# Examples
+```jldoctest
+julia> real_if_close([1.0 + 1e-16im, 2.0 - 1e-17im])
+2-element Vector{Float64}:
+ 1.0
+ 2.0
+
+julia> real_if_close(1.0 + 0.5im)           # genuinely complex: left alone
+1.0 + 0.5im
+```
 """
 function real_if_close(A::AbstractArray{<:Complex}; tol::Real=100)
     thresh = tol * eps(real(eltype(A)))
@@ -32,6 +44,38 @@ real_if_close(z::Real; tol::Real=100) = z
 Linear operator `L : domain → codomain`. Provide at least one of the weak (bilinear
 form ⟨w, Lv⟩) or strong (coefficient map) matrices; the other is derived lazily
 from the codomain Gram matrix.
+
+Every differential operator in the package is one of these: [`grad`](@ref), [`d`](@ref),
+the Laplacians, [`hessian`](@ref), [`levi_civita`](@ref). They compose with `∘` (or
+`*`), add and scale, take adjoints with `'`, and apply to a tensor by calling them.
+
+# Examples
+```jldoctest
+julia> L = laplacian(dg, 0)
+LinearOperator(domain=FunctionSpace(dim=8), codomain=FunctionSpace(dim=8), shape=(8, 8))
+
+julia> L(f)                                # apply it
+ScalarFunction(space=FunctionSpace(dim=8), shape=(8,), batch_shape=())
+
+julia> maximum(abs.(to_pointwise_basis(L(f)) .- cos.(θ))) < 1e-2    # Δcos θ = cos θ
+true
+
+julia> grad(dg)'                           # the adjoint maps the other way
+LinearOperator(domain=VectorFieldSpace(dim=16), codomain=FunctionSpace(dim=8), shape=(8, 16))
+```
+
+Composition follows the maths, right to left. `div ∘ grad` and `-Δ` agree wherever the
+basis actually resolves the function (they part company only on the top modes, where
+the truncation bites):
+
+```jldoctest
+julia> Δf = laplacian(f);
+
+julia> DGf = (divergence(dg) ∘ grad(dg))(f);
+
+julia> maximum(abs.(to_pointwise_basis(DGf) .+ to_pointwise_basis(Δf))) < 1e-5
+true
+```
 """
 mutable struct LinearOperator
     domain::AbstractTensorSpace
@@ -52,14 +96,55 @@ function Base.show(io::IO, L::LinearOperator)
           ", shape=(", space_dim(L.codomain), ", ", space_dim(L.domain), "))")
 end
 
-"""Operator matrix in weak (bilinear-form) representation."""
+"""
+    weak(L::LinearOperator) -> Matrix
+    weak(B::BilinearOperator) -> Array
+
+The operator in weak form: the bilinear form `⟨w, L v⟩` in the bases of the domain and
+codomain. This is the form the operators are *built* in (it is what the weak-form
+einsums assemble), and the form in which adjoints are transposes and composition needs
+no Gram inverse. Derived from [`matrix`](@ref) via the codomain's [`gram`](@ref) if only
+the strong form is known.
+
+# Examples
+```jldoctest
+julia> L = laplacian(dg, 0);
+
+julia> size(weak(L))
+(8, 8)
+
+julia> weak(L) ≈ weak(L)'                  # Δ is self-adjoint, so its weak form is symmetric
+true
+
+julia> weak(L) ≈ gram(function_space(dg)) * matrix(L)
+true
+```
+"""
 function weak(L::LinearOperator)
     L._weak !== nothing && return L._weak
     L._weak = gram(L.codomain) * L._strong
     return L._weak
 end
 
-"""Operator matrix in strong (coefficient-map) representation."""
+"""
+    matrix(L::LinearOperator) -> Matrix
+
+The operator in strong form: the matrix that maps domain coefficients to codomain
+coefficients, which is what applying the operator actually multiplies by. Derived from
+[`weak`](@ref) through the codomain's [`gram_inv`](@ref), so it inherits the `rcond`
+truncation.
+
+# Examples
+```jldoctest
+julia> L = laplacian(dg, 0);
+
+julia> matrix(L) * f.coeffs ≈ L(f).coeffs
+true
+
+julia> size(matrix(grad(dg)))              # 16 vector-field coefficients ← 8 function ones
+(16, 8)
+```
+"""
 function matrix(L::LinearOperator)
     L._strong !== nothing && return L._strong
     L._strong = gram_inv(L.codomain) * L._weak
@@ -68,12 +153,52 @@ end
 
 Base.size(L::LinearOperator) = size(matrix(L))
 
-"""Adjoint operator `L* : W → V` (conjugate transpose of the weak matrix)."""
+"""
+    adjoint(L::LinearOperator) -> LinearOperator
+    L'
+
+The adjoint `L* : W → V`, defined by `⟨L v, w⟩_W = ⟨v, L* w⟩_V` — the conjugate
+transpose of the *weak* matrix. This is how [`codifferential`](@ref) and
+[`divergence`](@ref) are defined (`δ = d*`, `div = -∇*`).
+
+# Examples
+The defining identity, checked on the circle:
+
+```jldoctest
+julia> ω = d(dg_function(dg, sin.(θ)));
+
+julia> lhs = inner(dg, d(f), ω);                     # ⟨df, ω⟩
+
+julia> rhs = inner(dg, f, codifferential(ω));        # ⟨f, δω⟩
+
+julia> isapprox(lhs, rhs; rtol=1e-8)
+true
+
+julia> grad(dg)'
+LinearOperator(domain=VectorFieldSpace(dim=16), codomain=FunctionSpace(dim=8), shape=(8, 16))
+```
+"""
 function Base.adjoint(L::LinearOperator)
     return LinearOperator(L.codomain, L.domain; weak_matrix=Matrix(weak(L)'))
 end
 
-"""`true` if the (endomorphism) operator equals its adjoint; `nothing` otherwise."""
+"""
+    is_self_adjoint(L) -> Bool or nothing
+
+`true` if the operator is an endomorphism equal to its own adjoint, `false` if it is an
+endomorphism that is not, and `nothing` if it maps between different spaces (where the
+question is meaningless). [`spectrum`](@ref) and [`inverse`](@ref) take the Hermitian
+path when this is `true`.
+
+# Examples
+```jldoctest
+julia> is_self_adjoint(laplacian(dg, 0))
+true
+
+julia> is_self_adjoint(grad(dg)) === nothing     # A → 𝔛(M): not an endomorphism
+true
+```
+"""
 function is_self_adjoint(L::LinearOperator)
     L.domain == L.codomain || return nothing
     W = weak(L)
@@ -95,7 +220,25 @@ Base.:*(L::LinearOperator, s::Number) = LinearOperator(L.domain, L.codomain; wea
 Base.:*(s::Number, L::LinearOperator) = L * s
 Base.:-(L::LinearOperator) = (-1) * L
 
-"""Compose two operators: `(A ∘ B)(x) = A(B(x))`, requiring `B.codomain == A.domain`."""
+"""
+    ∘(A::LinearOperator, B::LinearOperator) -> LinearOperator
+    A * B
+
+Compose two operators: `(A ∘ B)(x) = A(B(x))`. Requires `B.codomain == A.domain`.
+Composed in weak form, so no Gram matrix is inverted along the way.
+
+# Examples
+```jldoctest
+julia> Δ = codifferential(dg, 1) ∘ d(dg, 0)          # δd, the up-Laplacian by hand
+LinearOperator(domain=FunctionSpace(dim=8), codomain=FunctionSpace(dim=8), shape=(8, 8))
+
+julia> (identity_operator(function_space(dg)) ∘ laplacian(dg, 0))(f).coeffs ≈ laplacian(f).coeffs
+true
+
+julia> grad(dg) ∘ grad(dg)                           # 𝔛(M) ≠ A
+ERROR: AssertionError: Incompatible spaces: VectorFieldSpace → FunctionSpace.
+```
+"""
 function Base.:∘(A::LinearOperator, B::LinearOperator)
     @assert B.codomain == A.domain "Incompatible spaces: $(typeof(B.codomain)) → $(typeof(A.domain))."
     # Compose in weak form to avoid inverting Gram matrices unnecessarily.
@@ -138,7 +281,32 @@ end
 
 Eigenvalues (and, unless `eigvals_only`, the eigenvectors wrapped as a batched
 tensor of the domain) of an endomorphism, computed in the truncated orthonormal
-basis of the domain.
+basis of the domain. Eigenvalues come back ascending; the eigenvectors are stacked
+along a *batch* axis, so they can be filtered as one batched tensor.
+
+# Examples
+The Laplacian eigenvalues of the unit circle are `0, 1, 1, 4, 4, 9, 9, …`. The first
+few are recovered well; the top of the spectrum is where the 8-mode truncation shows:
+
+```jldoctest
+julia> evals = spectrum(laplacian(dg, 0); eigvals_only=true);
+
+julia> round.(abs.(evals[1:5]); digits=2)     # |·| only to pin the sign of the zero
+5-element Vector{Float64}:
+ 0.0
+ 1.0
+ 1.0
+ 3.78
+ 3.78
+
+julia> evals, evecs = spectrum(laplacian(dg, 0));
+
+julia> evecs                                  # one eigenfunction per batch slot
+ScalarFunction(space=FunctionSpace(dim=8), shape=(8, 8), batch_shape=(8,))
+
+julia> round(l2_norm(evecs)[1]; digits=6)     # L²-normalised
+1.0
+```
 """
 function spectrum(L::LinearOperator; eigvals_only::Bool=false)
     evals, evecs = _spectral_decomposition(L)
@@ -159,7 +327,27 @@ end
     inverse(L; rcond=nothing) -> LinearOperator
 
 Spectral (Moore–Penrose) pseudo-inverse of an endomorphism, discarding eigenvalues
-with `|λ| ≤ rcond` (default `L.domain.dg.rcond`).
+with `|λ| ≤ rcond` (default `L.domain.dg.rcond`). The inverse of a Laplacian is a
+Green's function — [`hodge_decomposition`](@ref) is built on exactly this.
+
+Because the kernel is discarded, `inverse(L) ∘ L` is the projection *off* the kernel,
+not the identity. On the circle the kernel of Δ is the constants, so it round-trips any
+function with zero mean:
+
+# Examples
+```jldoctest
+julia> L = laplacian(dg, 0);
+
+julia> recovered = inverse(L)(L(f));          # f = cos θ has zero mean
+
+julia> isapprox(recovered.coeffs, f.coeffs; atol=1e-5)
+true
+
+julia> const_fn = dg_function(dg, ones(60));  # in the kernel of Δ
+
+julia> maximum(abs.(inverse(L)(L(const_fn)).coeffs)) < 1e-10
+true
+```
 """
 function inverse(L::LinearOperator; rcond::Union{Nothing,Real}=nothing)
     evals, evecs = _spectral_decomposition(L)
@@ -189,7 +377,24 @@ function inverse(L::LinearOperator; rcond::Union{Nothing,Real}=nothing)
 end
 
 # ── Application ────────────────────────────────────────────────────────────────
-"""Apply the operator to a tensor in its domain, returning a tensor in the codomain."""
+"""
+    (L::LinearOperator)(t) -> AbstractTensor
+
+Apply the operator to a tensor of its domain, returning one in its codomain. Batch axes
+pass straight through.
+
+# Examples
+```jldoctest
+julia> laplacian(dg, 0)(f)
+ScalarFunction(space=FunctionSpace(dim=8), shape=(8,), batch_shape=())
+
+julia> grad(dg)(f)
+VectorField(space=VectorFieldSpace(dim=16), shape=(16,), batch_shape=())
+
+julia> laplacian(dg, 0)(grad(f))              # wrong space
+ERROR: AssertionError: Input tensor belongs to VectorFieldSpace, expected FunctionSpace.
+```
+"""
 function (L::LinearOperator)(t::AbstractTensor)
     @assert t.space == L.domain "Input tensor belongs to $(typeof(t.space)), expected $(typeof(L.domain))."
     coeffs_flat, bshape = flatten_batch_dims(t.coeffs)
@@ -199,13 +404,37 @@ function (L::LinearOperator)(t::AbstractTensor)
 end
 
 # ── Special operators ──────────────────────────────────────────────────────────
-"""Zero operator `domain → codomain` (defaults to an endomorphism)."""
+"""
+    zero_operator(domain, codomain=domain) -> LinearOperator
+
+The zero operator. Useful as a block in [`block`](@ref), and as the top-degree
+up-Laplacian.
+
+# Examples
+```jldoctest
+julia> Z = zero_operator(function_space(dg), vector_field_space(dg))
+LinearOperator(domain=FunctionSpace(dim=8), codomain=VectorFieldSpace(dim=16), shape=(16, 8))
+
+julia> all(iszero, Z(f).coeffs)
+true
+```
+"""
 function zero_operator(domain::AbstractTensorSpace, codomain::AbstractTensorSpace=domain)
     weak_matrix = zeros(Float64, space_dim(codomain), space_dim(domain))
     return LinearOperator(domain, codomain; weak_matrix=weak_matrix)
 end
 
-"""Identity operator on `space`."""
+"""
+    identity_operator(space) -> LinearOperator
+
+The identity on `space`.
+
+# Examples
+```jldoctest
+julia> identity_operator(function_space(dg))(f).coeffs ≈ f.coeffs
+true
+```
+"""
 function identity_operator(space::AbstractTensorSpace)
     strong = Matrix{Float64}(I, space_dim(space), space_dim(space))
     return LinearOperator(space, space; strong_matrix=strong)

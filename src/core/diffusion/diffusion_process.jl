@@ -15,6 +15,28 @@ using Random: MersenneTwister
 k-nearest-neighbour graph. `data_matrix` is `(n, d)`. Returns `(n, k)` distances
 and 1-based neighbour indices, sorted by increasing distance (each point's first
 neighbour is itself).
+
+Step one of [`from_point_cloud`](@ref); its output feeds [`markov_chain`](@ref).
+
+# Examples
+Three points on a line. Each is its own nearest neighbour (distance 0), and the
+next column is the closest other point:
+
+```jldoctest
+julia> nbr_distances, nbr_indices = knn_graph([0.0 0.0; 1.0 0.0; 3.0 0.0], 2);
+
+julia> nbr_distances
+3×2 Matrix{Float64}:
+ 0.0  1.0
+ 0.0  1.0
+ 0.0  2.0
+
+julia> nbr_indices                 # 1-based; column 1 is the point itself
+3×2 Matrix{Int64}:
+ 1  2
+ 2  1
+ 3  2
+```
 """
 function knn_graph(data_matrix::AbstractMatrix, knn_kernel::Integer=32)
     n = size(data_matrix, 1)
@@ -36,6 +58,28 @@ end
 Local bandwidths from neighbour distances. `k_bandwidth` matches the Python
 (0-based) argument: `"k"` uses the `k_bandwidth`-th neighbour distance; `"l1"`
 and `"l2"` average over the first `k_bandwidth` neighbours excluding self.
+
+The bandwidth is the local length scale of the kernel — it is what lets the
+diffusion adapt to a point cloud of varying density.
+
+# Examples
+Two points whose sorted neighbour distances are `(0, 1, 2)` and `(0, 1, 3)`. The
+`"k"` rule reads off the `k_bandwidth`-th (0-based) column; `"l2"` takes the
+root-mean-square over the neighbours before it, excluding self:
+
+```jldoctest
+julia> nbr_distances = [0.0 1.0 2.0; 0.0 1.0 3.0];
+
+julia> compute_local_bandwidths(nbr_distances, 2, "k")     # the 2nd neighbour
+2-element Vector{Float64}:
+ 2.0
+ 3.0
+
+julia> compute_local_bandwidths(nbr_distances, 3, "l2")    # √((1² + 2²)/2), √((1² + 3²)/2)
+2-element Vector{Float64}:
+ 1.5811388300841898
+ 2.23606797749979
+```
 """
 function compute_local_bandwidths(nbr_distances::AbstractMatrix, k_bandwidth::Integer=8,
                                   bandwidth_type::AbstractString="l2")
@@ -56,6 +100,25 @@ end
 
 Select the kernel scale `epsilon` maximising the log-log slope of the average
 kernel value, and the corresponding intrinsic dimension estimate `dim`.
+
+The slope of `log Σ exp(-dᵢⱼ²/ε)` against `log ε` peaks at the scale where the
+kernel sees the manifold rather than the noise below it or the whole cloud above it,
+and twice that peak slope estimates the *intrinsic* dimension.
+
+# Examples
+The circle is one-dimensional, and the tuner says so — it never sees the ℝ² the
+points are embedded in:
+
+```jldoctest
+julia> nbr_distances, _ = knn_graph(circle, 16);
+
+julia> epsilons = 2 .^ collect(-10:0.25:9.75);
+
+julia> epsilon, dim = tune_kernel(nbr_distances .^ 2, epsilons);
+
+julia> round(dim; digits=2)
+1.01
+```
 """
 function tune_kernel(kernel_entries::AbstractMatrix, epsilons::AbstractVector)
     ne = length(epsilons)
@@ -80,6 +143,38 @@ end
 
 Row-stochastic diffusion kernel `(n, k)` and local bandwidths `ρ` `(n,)` via the
 variable-bandwidth ("Diffusion Maps") construction with the α-normalisation.
+
+`knn_bandwidth` neighbours set the local length scale, so the kNN graph must be
+wider than it: `size(nbr_distances, 2) > knn_bandwidth`.
+
+# Examples
+The kernel is a Markov chain — every row is a probability distribution over the
+point's neighbours:
+
+```jldoctest
+julia> kernel, bandwidths = markov_chain(knn_graph(circle, 16)...);
+
+julia> size(kernel)
+(60, 16)
+
+julia> all(≈(1.0), sum(kernel; dims=2))         # row-stochastic
+true
+
+julia> round.(kernel[1, 1:3]; digits=4)         # self first, then the two nearest
+3-element Vector{Float64}:
+ 0.2157
+ 0.1861
+ 0.1861
+```
+
+The circle is sampled uniformly, so every point gets the same bandwidth:
+
+```jldoctest
+julia> _, bandwidths = markov_chain(knn_graph(circle, 16)...);
+
+julia> round(maximum(bandwidths) - minimum(bandwidths); digits=6)
+0.0
+```
 """
 function markov_chain(nbr_distances::AbstractMatrix, nbr_indices::AbstractMatrix{<:Integer};
                       c::Real=0, bandwidth_variability::Real=-0.5, knn_bandwidth::Integer=8)
@@ -127,6 +222,37 @@ end
 
 Symmetric sparse kernel `K = (A + Aᵀ)/2` from the row-stochastic kernel, and its
 column sums (the unnormalised measure μ). `nbr_indices` is 1-based.
+
+Symmetrising is what makes the eigenproblem in [`compute_eigenfunction_basis`](@ref)
+self-adjoint, and the column sums are the measure the whole geometry integrates
+against.
+
+# Examples
+Two points, each diffusing half its mass to the other:
+
+```jldoctest
+julia> K, row_sums = build_symmetric_kernel_matrix([0.5 0.5; 0.5 0.5], [1 2; 2 1]);
+
+julia> Matrix(K)
+2×2 Matrix{Float64}:
+ 0.5  0.5
+ 0.5  0.5
+
+julia> row_sums
+2-element Vector{Float64}:
+ 1.0
+ 1.0
+```
+
+On the circle it is a 60×60 sparse matrix, symmetric by construction:
+
+```jldoctest
+julia> K, _ = build_symmetric_kernel_matrix(markov_chain(knn_graph(circle, 16)...)[1],
+                                            knn_graph(circle, 16)[2]);
+
+julia> size(K), Matrix(K) == Matrix(K)'
+((60, 60), true)
+```
 """
 function build_symmetric_kernel_matrix(diffusion_kernel::AbstractMatrix,
                                        nbr_indices::AbstractMatrix{<:Integer})
@@ -153,6 +279,25 @@ end
 Diffusion-maps eigenfunction basis `{φ_i}` `(n, n0)`, ordered by increasing
 complexity with `φ_0 ≡ 1`. Uses Arpack for `n0 < n`, otherwise a dense Hermitian
 eigendecomposition.
+
+This is the basis every coefficient in the package is expressed in. The columns are
+ordered by decreasing kernel eigenvalue — the low-frequency modes of the data come
+first — and the *sign* of each column beyond `φ_0` is whatever the eigensolver
+returns, so never depend on it.
+
+# Examples
+```jldoctest
+julia> K, row_sums = build_symmetric_kernel_matrix(markov_chain(knn_graph(circle, 16)...)[1],
+                                                   knn_graph(circle, 16)[2]);
+
+julia> u = compute_eigenfunction_basis(K, row_sums; n0=4);
+
+julia> size(u)
+(60, 4)
+
+julia> all(≈(1.0), u[:, 1])        # φ₀ is the constant function, normalised to 1
+true
+```
 """
 function compute_eigenfunction_basis(symmetric_kernel_matrix, row_sums; n0::Integer=40)
     D = Diagonal(row_sums .^ (-1 / 2))

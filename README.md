@@ -32,7 +32,7 @@ the heat diffusion of the data — no mesh, no charts, no prescribed metric.
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/wardjm/DiffusionGeometryJ.jl")
+Pkg.add(url="https://github.com/wardjm/DiffusionGeometryJ")
 ```
 
 Plotting is provided through a package extension that loads only when a
@@ -119,6 +119,25 @@ wedge(α, β)          # wedge product, degree k₁ + k₂ — also spelled α ^
 f * α                # pointwise product with a function (so is wedge(f, α))
 ```
 
+Read one back with the accessors — a tensor stores *coefficients* in the diffusion
+basis, not pointwise values, and `to_pointwise_basis` is what evaluates it:
+
+```julia
+coeffs(X)            # the coefficient array
+space(X)             # the tensor space it lives in
+geometry(X)          # the DiffusionGeometry behind it
+to_pointwise_basis(X)   # values at the sample points, (batch…, n·C) — the inverse
+                        # of the dg_* factories, up to the basis truncation
+```
+
+Tensors, spaces and the geometry itself print as a one-line summary rather than
+dumping the eigenbasis:
+
+```
+VectorField(space=VectorFieldSpace(dim=48), shape=(48,), batch_shape=())
+DiffusionGeometry(n=120, ambient_dim=3, n_function_basis=16, n_coefficients=16)
+```
+
 The learned metric gives you geometry:
 
 ```julia
@@ -126,6 +145,24 @@ g(dg, X, Y)          # pointwise inner product of two fields (n,)
 inner(dg, X, Y)      # global L² inner product
 l2_norm(X)           # global L² norm       (or l2_norm(dg, X))
 pointwise_norm(X)    # pointwise norm (n,)  (or pointwise_norm(dg, X))
+```
+
+### Batches
+
+Leading axes are *batch* dimensions — many fields carried in one tensor:
+
+```julia
+F = dg_function(dg, ones(3, 60))   # three functions at once
+batch_shape(F)                     # (3,)
+```
+
+A plain numeric array multiplying a tensor is a bag of **batch-wise scalars**, never a
+coefficient vector, and `.*` / `./` are exact synonyms for `*` / `/` (no other
+broadcast is defined). That is what makes a spectral filter a one-liner:
+
+```julia
+evals, evecs = spectrum(laplacian(dg, 0))
+smoothed = exp.(-evals) .* evecs         # damp each mode by e^(-λ)
 ```
 
 ## Differential operators
@@ -257,7 +294,7 @@ dgplot(T)       # ellipsoids for a (0,2)-tensor
 `dgplot!` adds to an existing axis. Specialised recipes (`dgscatter`, `dgquiver`,
 `dg2form`, `dg3form`, `dgellipsoids`, `dgeiglines`, `dgtangentplanes`) are
 available directly. Animate a time-evolving field with `dganimate`. See
-[`docs/plotting.md`](docs/plotting.md).
+[`docs/src/plotting.md`](docs/src/plotting.md).
 
 ## Conventions
 
@@ -265,6 +302,12 @@ available directly. Animate a time-evolving field with `dganimate`. See
   in keeping with Julia. Point-cloud data is `n × d` (rows are points).
 - Arrays keep a leading point axis `p`, so a field's coefficients are laid out
   per point.
+- **Batch axes broadcast from the right** (numpy's rule, *not* Julia's): they are
+  matched from the trailing axis, with length-1 axes stretching. A `(3, 4)` batch and
+  a `(4,)` batch combine to `(3, 4)`.
+- A tensor holds **coefficients in the diffusion basis, not pointwise values** —
+  `to_pointwise_basis` evaluates it, and `dg_function` and friends project the other
+  way. This is why a numeric array scaling a tensor is read as batch-wise scalars.
 - **`*` on two `Form`s is the tensor product**, following Python; the wedge is
   `wedge(α, β)` or `α ^ β`. Julia's `^` binds *tighter* than `+` and `*` where
   Python's binds looser than both, so a Python expression that leans on that
@@ -301,6 +344,28 @@ than passed separately.
 One caveat: a fresh Julia process pays a one-time JIT compilation cost (~10 s) on
 the first `from_point_cloud` call, which the interpreted Python does not; every
 call after that is warm.
+
+## Documentation
+
+Every exported function carries a docstring with runnable examples. Build the
+[Documenter](https://documenter.juliadocs.org) site with:
+
+```bash
+julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
+julia --project=docs docs/make.jl        # writes docs/build, and runs every doctest
+```
+
+The examples are doctests: they assert real values (the Laplacian spectrum of the
+circle, the adjointness of `δ` against `d`, the antisymmetry of the wedge) and run as
+part of the test suite — both the docstring examples and those in the guide pages — so
+they cannot drift from the code. They share a preamble — `dg` (60 points on a circle),
+`dg3` (200 on a sphere), and `f = cos θ` — defined in `docs/doctest_setup.jl`.
+
+The site also carries a [Conventions](docs/src/conventions.md) page (coefficients vs
+values, batch broadcasting, weak vs strong forms) and a catalogue of the
+[upstream bugs](docs/src/upstream-bugs.md) found in the Python reference during the
+port. CI builds the site with `checkdocs=:exports`, so an undocumented export or a
+broken example fails the build.
 
 ## Testing
 

@@ -13,7 +13,35 @@ using OMEinsum: @ein_str, @optein_str
     _from_pointwise_basis(data, space; basis_count=nothing) -> Array
 
 Convert pointwise `data` (trailing shape `(n, C)`) to coefficients in the function
-basis (trailing length `basis_count · C`, defaulting to `space_dim ÷ C`).
+basis (trailing length `basis_count · C`, defaulting to `space_dim ÷ C`). The engine
+behind [`from_pointwise`](@ref); inverted (up to the truncation) by
+[`_to_pointwise_basis`](@ref).
+
+It solves the weak formulation `G c = ∫ φᵢ · data dμ`, so the result is the
+*L²-projection* of the data onto the span of the basis, not an interpolation.
+
+# Examples
+`cos θ` lives entirely in the λ = 1 eigenspace of the circle's Laplacian, so only
+coefficients 2 and 3 are non-zero — and by Parseval they carry all of its L² norm,
+`∫cos²θ = 1/2`:
+
+```jldoctest
+julia> c = DiffusionGeometryJ._from_pointwise_basis(reshape(cos.(θ), 60, 1), function_space(dg));
+
+julia> findall(>(1e-3), abs.(c))          # supported on the λ = 1 eigenspace alone
+2-element Vector{Int64}:
+ 2
+ 3
+
+julia> round(sum(abs2, c); digits=4)
+0.5
+```
+
+!!! note "Individual coefficients are not reproducible"
+    λ = 1 has multiplicity two on the circle, so the eigensolver is free to return any
+    orthonormal pair spanning that plane. `c[2]` and `c[3]` therefore differ between
+    BLAS versions (only `c[2]² + c[3]²` is fixed). Never assert on a single coefficient
+    of a function that straddles a degenerate eigenspace.
 """
 function _from_pointwise_basis(data::AbstractArray, space; basis_count=nothing)
     C = component_dim(space)
@@ -39,7 +67,22 @@ end
     _to_pointwise_basis(coeffs, space; basis_count=nothing) -> Array
 
 Convert coefficients (trailing length `basis_count · C`) to pointwise data
-(trailing length `n · C`). `basis_count` defaults to `n_coefficients`.
+(trailing length `n · C`). `basis_count` defaults to `n_coefficients`. The engine
+behind [`to_pointwise_basis`](@ref) — it just evaluates `Σᵢ cᵢ φᵢ` at the points.
+
+# Examples
+Evaluating the coefficients of `f` back at the 60 sample points recovers `cos θ`, up
+to the error of the 8-function truncation:
+
+```jldoctest
+julia> values = DiffusionGeometryJ._to_pointwise_basis(f.coeffs, function_space(dg); basis_count=8);
+
+julia> size(values)
+(60,)
+
+julia> maximum(abs.(values .- cos.(θ))) < 1e-4
+true
+```
 """
 function _to_pointwise_basis(coeffs::AbstractArray, space; basis_count=nothing)
     dgv = space.dg

@@ -8,6 +8,22 @@ using OMEinsum: @ein_str, @optein_str
 
 Weak Lie bracket operator tensor `Lie^{weak}_{IJ, i1j1, i2j2}`, shape
 `(n1 d, n1 d, n1 d)`. `cdc(f, h)` is the carré du champ callback.
+
+The assembler behind the [`lie_bracket`](@ref) operator. This is the package's one
+three-index contraction, and its cost grows fast in `n_coefficients`.
+
+# Examples
+```jldoctest
+julia> W = lie_bracket_weak(function_basis(dg), immersion_coords(dg),
+                            gamma_coords(dg.cache), measure(dg), n_coefficients(dg),
+                            (a, b) -> cdc(dg.triple, a, b));
+
+julia> size(W)
+(16, 16, 16)
+
+julia> W ≈ weak(lie_bracket(dg))
+true
+```
 """
 function lie_bracket_weak(u::AbstractMatrix, coords::AbstractMatrix,
                           gamma_coords::AbstractArray{<:Any,3},

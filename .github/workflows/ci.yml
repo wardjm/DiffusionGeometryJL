@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']          # a release tag builds the versioned docs
   pull_request:
 
 jobs:
@@ -23,3 +24,27 @@ jobs:
       # pyparity/gen_fixtures.py against the Python reference package), so the
       # test job needs no Python toolchain.
       - uses: julia-actions/julia-runtest@v1
+
+  docs:
+    runs-on: ubuntu-latest
+    # `deploydocs` pushes the built site to the gh-pages branch; on a fork PR the
+    # token is read-only and it skips the push and just builds (and doctests).
+    permissions:
+      contents: write
+      pull-requests: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - name: Build docs (doctests included)
+        run: |
+          julia --project=docs -e '
+            using Pkg
+            Pkg.develop(PackageSpec(path=pwd()))
+            Pkg.instantiate()'
+          julia --project=docs docs/make.jl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
