@@ -74,6 +74,38 @@
         @test aeq((X / f).coeffs, fx["Xdivf_coeffs"])
     end
 
+    @testset "broadcasting is a synonym for scaling" begin
+        w = [1.0, 2.0, 3.0]
+
+        # `.*` / `./` against a batch-weight vector collapse back onto `*` / `/`:
+        # one batched tensor, not an array of tensors.
+        for (dotted, plain) in ((w .* X, w * X), (X .* w, X * w), (X ./ w, X / w))
+            @test typeof(dotted) === typeof(plain)
+            @test size(dotted.coeffs) == (3, length(X.coeffs))
+            @test aeq(dotted.coeffs, plain.coeffs)
+        end
+
+        # …and against a scalar, or a Function (the pointwise product).
+        @test aeq((2.0 .* X).coeffs, (2.0 * X).coeffs)
+        @test aeq((X ./ 2.0).coeffs, (X / 2.0).coeffs)
+        @test aeq((f .* X).coeffs, (f * X).coeffs)
+        @test aeq((X ./ f).coeffs, (X / f).coeffs)
+
+        # The synonymy is exact, so a dotted product of two tensors is the same
+        # tensor product `*` gives — not an elementwise product of coefficients.
+        @test aeq((a1 .* b1).coeffs, (a1 * b1).coeffs)
+
+        # A chain works, both nested and flattened by `@.` into one n-ary call.
+        @test aeq(((w .* X) ./ 2.0).coeffs, ((w * X) / 2.0).coeffs)
+        @test aeq((@. w * X / 2.0).coeffs, ((w * X) / 2.0).coeffs)
+
+        # Every other elementwise operation is meaningless on coefficients and
+        # says so, rather than failing with a bare MethodError.
+        @test_throws ArgumentError X .+ 1.0
+        @test_throws ArgumentError X .- X
+        @test_throws ArgumentError abs.(X)
+    end
+
     @testset "wedge and tensor products" begin
         @test aeq(wedge(a1, b1).coeffs, fx["wedge_ab_coeffs"])
         @test aeq((a1 * b1).coeffs, fx["tensorprod_ab_coeffs"])

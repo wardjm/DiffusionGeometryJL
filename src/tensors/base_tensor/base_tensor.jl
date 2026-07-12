@@ -46,6 +46,44 @@ Base.:*(w::AbstractArray{<:Number}, t::AbstractTensor) = _scale_by_batch(t, w, *
 Base.:*(t::AbstractTensor, w::AbstractArray{<:Number}) = _scale_by_batch(t, w, *)
 Base.:/(t::AbstractTensor, w::AbstractArray{<:Number}) = _scale_by_batch(t, w, /)
 
+# ── Broadcasting ───────────────────────────────────────────────────────────────
+# `.*` and `./` are synonyms for `*` and `/`: `weights .* ω` is a single batched
+# tensor, exactly as `weights * ω` is. This is the arm upstream reaches through
+# `__array_ufunc__` (`np.multiply(weights, vecs)` routes back to `Tensor.__mul__`).
+#
+# The synonymy is exact and is the whole contract: `.*` and `./` mean whatever the
+# undotted operator means for those operands (batch weights, a scalar, a function,
+# another tensor), including when that is an error.
+#
+# Nothing else is offered. A tensor's coefficients live in a basis, so any *other*
+# elementwise operation on them (`ω .+ 1`, `abs.(ω)`) is not the operation it looks
+# like, and the fused loop broadcasting exists to provide would be wrong. A tensor
+# is therefore never an array to the broadcast machinery: it carries its own style,
+# `instantiate` skips the axis computation, and `copy` hands the whole expression
+# straight back to the tensor algebra.
+struct TensorStyle <: Broadcast.BroadcastStyle end
+
+Broadcast.BroadcastStyle(::Type{<:AbstractTensor}) = TensorStyle()
+Broadcast.BroadcastStyle(::TensorStyle, ::Broadcast.AbstractArrayStyle) = TensorStyle()
+Broadcast.broadcastable(t::AbstractTensor) = t
+Broadcast.instantiate(bc::Broadcast.Broadcasted{TensorStyle}) = bc
+
+Base.copy(bc::Broadcast.Broadcasted{TensorStyle}) =
+    _broadcast_tensor(bc.f, map(_materialise_arg, bc.args)...)
+
+# A nested broadcast (`(w .* X) ./ 2`) is evaluated first, then fed to the outer
+# operation as an ordinary operand.
+_materialise_arg(x) = x
+_materialise_arg(bc::Broadcast.Broadcasted) = Broadcast.materialize(bc)
+
+# `@.` flattens a chain into one n-ary call, so fold it the way Julia associates.
+_broadcast_tensor(::typeof(*), a, b, rest...) = foldl(*, rest; init=a * b)
+_broadcast_tensor(::typeof(/), a, b, rest...) = foldl(/, rest; init=a / b)
+_broadcast_tensor(f, args...) = throw(ArgumentError(
+    "broadcasting a tensor is only defined for `.*` and `./` (synonyms for `*` and `/`); " *
+    "got `$f`. A tensor's coefficients are basis-dependent, so elementwise arithmetic on " *
+    "them is not the operation it appears to be — use the tensor algebra instead."))
+
 # A scalar added to a function is the constant function of that value, projected
 # onto the basis. Only functions absorb a scalar this way — the other tensors have
 # no canonical constant element, and `+`/`-` against a Number stays a MethodError.

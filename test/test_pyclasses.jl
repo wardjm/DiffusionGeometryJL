@@ -779,7 +779,9 @@ end
             weights = exp.(-vals)
             expected = coeffs(vecs) .* reshape(weights, batch_shape(vecs)..., 1)
 
-            for out in (weights * vecs, vecs * weights)
+            # `.*` stands in for upstream's `np.multiply(weights, vecs)` arm, which
+            # `__array_ufunc__` routes back to `Tensor.__mul__`.
+            for out in (weights * vecs, vecs * weights, weights .* vecs)
                 @test typeof(out) === typeof(vecs)
                 @test batch_shape(out) == batch_shape(vecs)
                 @test coeffs(out) ≈ expected
