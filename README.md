@@ -257,7 +257,7 @@ dgplot(T)       # ellipsoids for a (0,2)-tensor
 `dgplot!` adds to an existing axis. Specialised recipes (`dgscatter`, `dgquiver`,
 `dg2form`, `dg3form`, `dgellipsoids`, `dgeiglines`, `dgtangentplanes`) are
 available directly. Animate a time-evolving field with `dganimate`. See
-[`docs/plotting.md`](docs/plotting.md).
+[`docs/src/plotting.md`](docs/src/plotting.md).
 
 ## Conventions
 
@@ -301,6 +301,22 @@ than passed separately.
 One caveat: a fresh Julia process pays a one-time JIT compilation cost (~10 s) on
 the first `from_point_cloud` call, which the interpreted Python does not; every
 call after that is warm.
+
+## Documentation
+
+Every exported function carries a docstring with runnable examples. Build the
+[Documenter](https://documenter.juliadocs.org) site with:
+
+```bash
+julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
+julia --project=docs docs/make.jl        # writes docs/build, and runs every doctest
+```
+
+The examples are doctests: they assert real values (the Laplacian spectrum of the
+circle, the adjointness of `δ` against `d`, the antisymmetry of the wedge) and run as
+part of the test suite, so they cannot drift from the code. They share a preamble —
+`dg` (60 points on a circle), `dg3` (200 on a sphere), and `f = cos θ` — defined in
+`docs/doctest_setup.jl`.
 
 ## Testing
 

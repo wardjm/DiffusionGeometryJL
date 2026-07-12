@@ -9,6 +9,19 @@ using OMEinsum: @ein_str, @optein_str
 Pointwise Hessian tensor `H(φ_I)(∇x_i, ∇x_j)`, shape `(n, d, d, n0)`:
 `H(f)(∇x_i,∇x_j) = ½(Γ(x_i, Γ(x_j, f)) + Γ(x_j, Γ(x_i, f)) − Γ(f, Γ(x_i, x_j)))`.
 `cdc(f, h)` is the carré du champ callback.
+
+The raw (unregularised) form; `hessian_functions(cache)` is the memoised, regularised
+one the [`hessian`](@ref) operator actually uses.
+
+# Examples
+```jldoctest
+julia> H = hessian_functions(function_basis(dg), immersion_coords(dg),
+                             gamma_coords(dg.cache), gamma_mixed(dg.cache),
+                             (a, b) -> cdc(dg.triple, a, b));
+
+julia> size(H)                       # (n, d, d, n_function_basis)
+(60, 2, 2, 8)
+```
 """
 function hessian_functions(u::AbstractMatrix, coords::AbstractMatrix,
                            gamma_coords::AbstractArray{<:Any,3},
@@ -21,7 +34,16 @@ end
 """
     hessian_coords(coords, gamma_coords, cdc) -> Array
 
-Pointwise coordinate Hessian `H(x_k)(∇x_i, ∇x_j)`, shape `(n, d, d, d)`.
+Pointwise coordinate Hessian `H(x_k)(∇x_i, ∇x_j)`, shape `(n, d, d, d)` — the second
+fundamental form of the immersion, and the Christoffel data of
+[`levi_civita`](@ref). The memoised, regularised version is `hessian_coords(cache)`.
+
+# Examples
+```jldoctest
+julia> size(hessian_coords(immersion_coords(dg), gamma_coords(dg.cache),
+                           (a, b) -> cdc(dg.triple, a, b)))
+(60, 2, 2, 2)
+```
 """
 function hessian_coords(coords::AbstractMatrix, gamma_coords::AbstractArray{<:Any,3}, cdc)
     gc = cdc(coords, gamma_coords)        # Γ(x_i, Γ(x_j, x_k))   (n, d, d, d)
@@ -33,6 +55,16 @@ end
 
 Weak Hessian on functions, `H : A → Ω¹ ⊗ Ω¹`, shape `(n1 * d², n0)`.
 `hessian_matrix` is `H(φ_i)(∇x_j, ∇x_k)` of shape `(n, d, d, n0)`.
+
+The full-tensor form. [`hessian`](@ref) uses the symmetric one
+([`hessian_02_sym_weak`](@ref)) instead, since the Hessian is symmetric.
+
+# Examples
+```jldoctest
+julia> size(hessian_02_weak(function_basis(dg), hessian_functions(dg.cache),
+                            measure(dg), n_coefficients(dg)))
+(32, 8)
+```
 """
 function hessian_02_weak(u::AbstractMatrix, hessian_matrix::AbstractArray{<:Any,4},
                          measure::AbstractVector, n_coefficients::Integer)
@@ -47,6 +79,20 @@ end
 
 Weak Hessian as a symmetric (0,2)-tensor, shape `(n1 * d_sym, n0)`. Off-diagonal
 symmetric-basis entries are doubled to match the symmetric basis convention.
+
+The assembler behind the [`hessian`](@ref) operator.
+
+# Examples
+```jldoctest
+julia> W = hessian_02_sym_weak(function_basis(dg), hessian_functions(dg.cache),
+                               measure(dg), n_coefficients(dg));
+
+julia> size(W)                       # (n_coefficients · d_sym, n_function_basis)
+(24, 8)
+
+julia> W ≈ weak(hessian(dg))
+true
+```
 """
 function hessian_02_sym_weak(u::AbstractMatrix, hessian_matrix::AbstractArray{T,4},
                              measure::AbstractVector, n_coefficients::Integer) where {T}

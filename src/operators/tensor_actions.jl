@@ -13,7 +13,19 @@ import LinearAlgebra
     vf_operator(X) -> LinearOperator
 
 The vector field as a directional-derivative operator `A → A`, `f ↦ X(f) = g(X, ∇f)`
-(unbatched `X`).
+(unbatched `X`). A vector field *is* a derivation; this is that derivation as a matrix.
+Calling `X(f)` applies it.
+
+# Examples
+```jldoctest
+julia> X = grad(f);
+
+julia> vf_operator(X)
+LinearOperator(domain=FunctionSpace(dim=8), codomain=FunctionSpace(dim=8), shape=(8, 8))
+
+julia> vf_operator(X)(f).coeffs ≈ X(f).coeffs
+true
+```
 """
 function vf_operator(X::VectorField)
     @assert isempty(batch_shape(X)) "operator only supports unbatched VectorFields."
@@ -25,13 +37,50 @@ function vf_operator(X::VectorField)
     return LinearOperator(function_space(dg), function_space(dg); weak_matrix=weak_matrix)
 end
 
-"""Apply the vector field as a directional derivative: `X(f) = g(X, ∇f)`."""
+"""
+    (X::VectorField)(f::ScalarFunction) -> ScalarFunction
+
+Apply the vector field as a directional derivative: `X(f) = g(X, ∇f)`.
+
+# Examples
+```jldoctest
+julia> X = grad(f);
+
+julia> X(f)                              # ∇f(f) = ‖∇f‖², up to the basis projection
+ScalarFunction(space=FunctionSpace(dim=8), shape=(8,), batch_shape=())
+
+julia> Y = grad(dg_function(dg, sin.(θ)));
+
+julia> isapprox(inner(dg, X(f), f), inner(dg, f, X(f)); rtol=1e-8)
+true
+```
+"""
 (X::VectorField)(f::ScalarFunction) = vf_operator(X)(f)
 
-"""Divergence of the vector field, `div X`."""
+"""
+    divergence(X::VectorField) -> ScalarFunction
+
+The divergence of the field, `div X` — shorthand for `divergence(geometry(X))(X)`.
+
+# Examples
+```jldoctest
+julia> maximum(abs.(to_pointwise_basis(divergence(grad(f))) .+ cos.(θ))) < 1e-2
+true
+```
+"""
 divergence(X::VectorField) = divergence(geometry(X))(X)
 
-"""Levi-Civita covariant derivative `∇X` as a (0,2)-tensor."""
+"""
+    levi_civita(X::VectorField) -> Tensor02
+
+The covariant derivative `∇X` of the field, as a (0,2)-tensor: `∇X(Y, W) = g(∇_Y X, W)`.
+
+# Examples
+```jldoctest
+julia> levi_civita(grad(f))
+Tensor02(space=Tensor02Space(dim=32), shape=(32,), batch_shape=())
+```
+"""
 levi_civita(X::VectorField) = levi_civita(geometry(X))(X)
 
 # ── Tensor02 as an operator / bilinear form ────────────────────────────────────
@@ -39,7 +88,18 @@ levi_civita(X::VectorField) = levi_civita(geometry(X))(X)
     t02_operator(α) -> LinearOperator
 
 Operator form `α^{op} : 𝔛(M) → 𝔛(M)` defined by `⟨α^{op}(X), Y⟩ = ∫ α(X, Y) dμ`
-(unbatched `α`).
+(unbatched `α`). Calling a `Tensor02` on a single vector field applies it.
+
+# Examples
+```jldoctest
+julia> α = levi_civita(grad(f));
+
+julia> t02_operator(α)
+LinearOperator(domain=VectorFieldSpace(dim=16), codomain=VectorFieldSpace(dim=16), shape=(16, 16))
+
+julia> t02_operator(α)(grad(f)).coeffs ≈ α(grad(f)).coeffs
+true
+```
 """
 function t02_operator(α::Tensor02)
     @assert isempty(batch_shape(α)) "operator only supports unbatched Tensor02 objects."
@@ -60,7 +120,21 @@ end
     (α::Tensor02)(X, Y) -> Array
 
 Evaluate the (0,2)-tensor pointwise on a pair of vector fields, returning
-`(batch..., n)` function values (regularised).
+`(batch..., n)` function values (regularised). With one argument it acts as an
+operator instead (see [`t02_operator`](@ref)).
+
+# Examples
+```jldoctest
+julia> α = d(f) * d(dg_function(dg, sin.(θ)));      # the tensor product df ⊗ dh
+
+julia> X = grad(f); Y = grad(dg_function(dg, sin.(θ)));
+
+julia> size(α(X, Y))
+(60,)
+
+julia> α(X)                                          # one argument → a vector field
+VectorField(space=VectorFieldSpace(dim=16), shape=(16,), batch_shape=())
+```
 """
 function (α::Tensor02)(X::VectorField, Y::VectorField)
     dg = geometry(α)
@@ -84,7 +158,14 @@ end
     to_ambient(α::Tensor02) -> Array
 
 Ambient-coordinate representation `(n, d, d)` obtained by raising both indices with
-the (regularised) coordinate carré du champ.
+the (regularised) coordinate carré du champ — the tensor written as a matrix field in
+the coordinates the data came in.
+
+# Examples
+```jldoctest
+julia> size(to_ambient(full_tensor(hessian(f))))
+(60, 2, 2)
+```
 """
 function to_ambient(α::Tensor02)
     @assert isempty(batch_shape(α)) "to_ambient only supports unbatched Tensor02 objects."
@@ -106,6 +187,17 @@ t02_operator(S::Tensor02Sym) = t02_operator(full_tensor(S))
 
 Interior product `ω(X) = g(ω♯, X)`, as pointwise values of shape `(batch..., n)`.
 Only defined for 1-forms.
+
+# Examples
+```jldoctest
+julia> ω = d(f); X = grad(f);
+
+julia> ω(X) ≈ g(dg, ω, flat(X))        # by definition
+true
+
+julia> size(ω(X))
+(60,)
+```
 """
 function (ω::Form)(X::VectorField)
     @assert degree(ω) == 1 "Only 1-forms can act on vector fields."
@@ -118,34 +210,142 @@ end
 # Each is the corresponding `dg` accessor evaluated at the tensor; the operators
 # are memoised on `dg`, so repeated calls reuse one weak matrix.
 
-"""Gradient `∇f`, a vector field."""
+"""
+    grad(f::ScalarFunction) -> VectorField
+
+The gradient `∇f` — shorthand for `grad(geometry(f))(f)`, using the memoised operator.
+
+# Examples
+```jldoctest
+julia> grad(f)
+VectorField(space=VectorFieldSpace(dim=16), shape=(16,), batch_shape=())
+```
+"""
 grad(f::ScalarFunction) = grad(geometry(f))(f)
 
-"""Exterior derivative `df`, a 1-form."""
+"""
+    d(f::ScalarFunction) -> Form
+
+The exterior derivative `df`, a 1-form — the gradient with its index lowered.
+
+# Examples
+```jldoctest
+julia> d(f).coeffs ≈ flat(grad(f)).coeffs
+true
+```
+"""
 d(f::ScalarFunction) = d(geometry(f), 0)(f)
 
-"""Up-Laplacian `Δ_up f = δ d f`."""
+"""
+    up_laplacian(f::ScalarFunction) -> ScalarFunction
+
+The up-Laplacian `Δ_up f = δdf`. On functions this is the whole Laplacian.
+
+# Examples
+```jldoctest
+julia> up_laplacian(f).coeffs ≈ laplacian(f).coeffs
+true
+```
+"""
 up_laplacian(f::ScalarFunction) = up_laplacian(geometry(f), 0)(f)
 
-"""Laplacian `Δf`. On functions the down-Laplacian vanishes, so this is `Δ_up`."""
+"""
+    laplacian(f::ScalarFunction) -> ScalarFunction
+
+The Laplacian `Δf = δdf` (the down-Laplacian vanishes on functions).
+
+# Examples
+`Δcos θ = cos θ` on the unit circle:
+
+```jldoctest
+julia> maximum(abs.(to_pointwise_basis(laplacian(f)) .- cos.(θ))) < 1e-2
+true
+```
+"""
 laplacian(f::ScalarFunction) = up_laplacian(geometry(f), 0)(f)
 
-"""Hessian `Hess f`, a symmetric (0,2)-tensor."""
+"""
+    hessian(f::ScalarFunction) -> Tensor02Sym
+
+The Hessian `Hess f`, a symmetric (0,2)-tensor.
+
+# Examples
+```jldoctest
+julia> hessian(f)
+Tensor02Sym(space=Tensor02SymSpace(dim=24), shape=(24,), batch_shape=())
+```
+"""
 hessian(f::ScalarFunction) = hessian(geometry(f))(f)
 
-"""Exterior derivative `dω : Ωᵏ → Ωᵏ⁺¹`."""
+"""
+    d(ω::Form) -> Form
+
+The exterior derivative `dω : Ωᵏ → Ωᵏ⁺¹`.
+
+# Examples
+```jldoctest
+julia> d(d(f))                          # a 2-form on the circle's ambient frame
+Form(space=FormSpace(degree=2, dim=8), shape=(8,), batch_shape=())
+```
+"""
 d(ω::Form) = d(geometry(ω), degree(ω))(ω)
 
-"""Codifferential `δω : Ωᵏ → Ωᵏ⁻¹`."""
+"""
+    codifferential(ω::Form) -> Form or ScalarFunction
+
+The codifferential `δω : Ωᵏ → Ωᵏ⁻¹`. On a 1-form it lands in the functions.
+
+# Examples
+`δdf = Δf`:
+
+```jldoctest
+julia> isapprox(codifferential(d(f)).coeffs, laplacian(f).coeffs; atol=1e-5)
+true
+```
+
+(Only to `atol`: `laplacian` assembles `δd` in one weak form, while composing the two
+operators passes through a Gram pseudo-inverse. They agree on everything the basis
+resolves.)
+"""
 codifferential(ω::Form) = codifferential(geometry(ω), degree(ω))(ω)
 
-"""Up-Laplacian `Δ_up ω = δ d ω`."""
+"""
+    up_laplacian(ω::Form) -> Form
+
+The up-Laplacian `Δ_up ω = δdω`.
+
+# Examples
+```jldoctest
+julia> up_laplacian(d(f))
+Form(space=FormSpace(degree=1, dim=16), shape=(16,), batch_shape=())
+```
+"""
 up_laplacian(ω::Form) = up_laplacian(geometry(ω), degree(ω))(ω)
 
-"""Down-Laplacian `Δ_down ω = d δ ω`."""
+"""
+    down_laplacian(ω::Form) -> Form
+
+The down-Laplacian `Δ_down ω = dδω`.
+
+# Examples
+```jldoctest
+julia> down_laplacian(d(f))
+Form(space=FormSpace(degree=1, dim=16), shape=(16,), batch_shape=())
+```
+"""
 down_laplacian(ω::Form) = down_laplacian(geometry(ω), degree(ω))(ω)
 
-"""Hodge Laplacian `Δω = (δd + dδ) ω`."""
+"""
+    laplacian(ω::Form) -> Form
+
+The Hodge Laplacian `Δω = (δd + dδ)ω`.
+
+# Examples
+```jldoctest
+julia> laplacian(d(f)).coeffs ≈ (up_laplacian(d(f)) + down_laplacian(d(f))).coeffs
+true
+```
+"""
 laplacian(ω::Form) = laplacian(geometry(ω), degree(ω))(ω)
 
 # ── Hodge decomposition ────────────────────────────────────────────────────────
@@ -154,6 +354,14 @@ laplacian(ω::Form) = laplacian(geometry(ω), degree(ω))(ω)
 
 Hodge decomposition of a function: `f = δβ + h` with `β = coexact_potential` a
 1-form and `h = harmonic_part`. There is no exact part, since `Ω⁻¹` is trivial.
+
+# Examples
+```jldoctest
+julia> β, h = hodge_decomposition(f);
+
+julia> isapprox((codifferential(β) + h).coeffs, f.coeffs; atol=1e-6)
+true
+```
 """
 function hodge_decomposition(f::ScalarFunction)
     dg = geometry(f)
@@ -171,6 +379,27 @@ top degree (`k = dim`) there is no coexact part and `coexact_potential` is `noth
 
 The potentials come from spectral pseudo-inverses of the Laplacians, so they are
 determined only up to the respective kernels.
+
+# Examples
+The decomposition reconstructs the form it came from:
+
+```jldoctest
+julia> ω = d(f) + d(dg_function(dg, sin.(θ)));
+
+julia> α, β, h = hodge_decomposition(ω);
+
+julia> isapprox((d(α) + codifferential(β) + h).coeffs, ω.coeffs; atol=1e-6)
+true
+```
+
+An exact form is all exact part — its harmonic component vanishes:
+
+```jldoctest
+julia> _, _, h = hodge_decomposition(d(f));
+
+julia> l2_norm(h) < 1e-5
+true
+```
 """
 function hodge_decomposition(ω::Form)
     dg = geometry(ω)
@@ -244,7 +473,16 @@ end
 
 Ambient polyvector representation `(n, D, …, D)` (k factors of the ambient
 dimension `D`) of an unbatched k-form, obtained by raising all k indices with the
-ambient carré du champ.
+ambient carré du champ. This is how a form becomes something you can draw.
+
+# Examples
+```jldoctest
+julia> size(to_ambient(d(f)))                 # a 1-form → one arrow per point
+(60, 2)
+
+julia> size(to_ambient(d(dg_function(dg3, sphere[:, 1]))))
+(200, 3)
+```
 """
 function to_ambient(ω::Form)
     @assert isempty(batch_shape(ω)) "to_ambient only supports unbatched Form objects."
@@ -259,13 +497,41 @@ function to_ambient(ω::Form)
     return expanded
 end
 
-"""Ambient representation of a scalar function — the pointwise values themselves."""
+"""
+    to_ambient(f::ScalarFunction) -> Array
+
+The ambient representation of a function is just its pointwise values.
+
+# Examples
+```jldoctest
+julia> to_ambient(f) == to_pointwise_basis(f)
+true
+```
+"""
 to_ambient(f::ScalarFunction) = to_pointwise_basis(f)
 
 """
     to_ambient(X::VectorField) -> Array
 
-Ambient quiver representation `(n, D)`: the 1-form `X♭` pushed to ambient coordinates.
+Ambient quiver representation `(n, D)`: the 1-form `X♭` pushed to ambient coordinates —
+the arrows a quiver plot draws. Inverted by
+[`vector_field_from_reconstruction`](@ref).
+
+# Examples
+The gradient of `cos θ` on the circle points along the tangent, so the arrows are
+orthogonal to the radius:
+
+```jldoctest
+julia> arrows = to_ambient(grad(f));
+
+julia> size(arrows)
+(60, 2)
+
+julia> radial = sum(arrows .* circle; dims=2);      # ⟨arrow, outward normal⟩
+
+julia> maximum(abs.(radial)) < 0.02                 # tangent to ~2% of the arrow length
+true
+```
 """
 to_ambient(X::VectorField) = to_ambient(flat(X))
 
@@ -278,6 +544,19 @@ The wedge product with a fixed k-form `a`, as an operator `Ωˡ(M) → Ωᵏ⁺�
 
 (The Python reference returns the bare coefficient matrix; here it is wrapped as
 the `LinearOperator` its name promises — that matrix is `matrix(wedge_operator(a, l))`.)
+
+# Examples
+```jldoctest
+julia> α = d(f);
+
+julia> W = wedge_operator(α, 1)
+LinearOperator(domain=FormSpace(degree=1, dim=16), codomain=FormSpace(degree=2, dim=8), shape=(8, 16))
+
+julia> β = d(dg_function(dg, sin.(θ)));
+
+julia> W(β).coeffs ≈ wedge(α, β).coeffs        # the operator is the product
+true
+```
 """
 function wedge_operator(a::Form, l::Integer)
     @assert isempty(batch_shape(a)) "wedge_operator only supports unbatched Forms."

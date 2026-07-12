@@ -12,6 +12,23 @@ Weak up-Laplacian (up-Hodge energy) matrix on `k`-forms, shape `(n1 Ck, n1 Ck)`.
 `⟨d(φ_i dx_J), d(φ_I dx_{J'})⟩ = ∫ g(dφ_i dx_J, dφ_I dx_{J'}) dμ`, evaluated via
 the Schur determinant formula `det([[a,b],[c,D]]) = det(D)(a − b D⁻¹ c)`.
 
+The assembler behind [`up_laplacian`](@ref). Building `δd` directly, rather than
+composing the two operators, avoids a Gram inverse in the middle — which is why the two
+routes do not agree exactly on the modes the basis barely resolves.
+
+# Examples
+```jldoctest
+julia> W = up_delta_weak(gamma_functions(dg.cache), gamma_mixed(dg.cache),
+                         gamma_coords(dg.cache), nothing, nothing, measure(dg), 0);
+
+julia> size(W)
+(8, 8)
+
+julia> W ≈ weak(up_laplacian(dg, 0))
+true
+```
+
+# Arguments
 - `gamma_functions` `(n, n0, n0)`: `Γ(φ_i, φ_I)`.
 - `gamma_mixed` `(n, d, n0)`: `Γ(x_j, φ_i)`.
 - `gamma_coords` `(n, d, d)`.

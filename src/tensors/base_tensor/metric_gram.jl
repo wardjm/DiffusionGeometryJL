@@ -8,7 +8,17 @@ using OMEinsum: @ein_str, @optein_str
 
 Metric tensor field `g(e_a, e_b)`, shape `(n, n1 C, n1 C)`.
 `matrices` `(n, C, C)` are the local inner-product matrices (compound determinants
-for k-forms, `gamma_02`/`gamma_02_sym` for (0,2)-tensors). `u_n1` is `(n, n1)`.
+for k-forms, [`gamma_02`](@ref)/[`gamma_02_sym`](@ref) for (0,2)-tensors). `u_n1` is
+`(n, n1)`. Called through [`metric_tensor`](@ref), which supplies the right matrices for
+each space.
+
+# Examples
+```jldoctest
+julia> u = function_basis(dg)[:, 1:2];
+
+julia> size(metric(u, gamma_coords(dg.cache)))        # 2 basis functions × 2 components
+(60, 4, 4)
+```
 """
 function metric(u_n1::AbstractMatrix, matrices::AbstractArray{<:Any,3})
     n, n1 = size(u_n1)
@@ -35,7 +45,19 @@ end
     _metric_apply(u_n1, regularise_func, a_coeffs, b_coeffs, matrices) -> Array
 
 Pointwise metric `g(A, B)(p) = A^c(p) g_cd(p) B^d(p)` for two coefficient vectors,
-returning `(batch..., n)`. `u_n1` is `(n, n1)`; `matrices` `(n, C, C)`.
+returning `(batch..., n)`. `u_n1` is `(n, n1)`; `matrices` `(n, C, C)`. The kernel
+behind [`metric_apply`](@ref) and hence [`g`](@ref) — the result is regularised before
+it is returned.
+
+# Examples
+```jldoctest
+julia> X = grad(f);
+
+julia> vals = metric_apply(vector_field_space(dg), X.coeffs, X.coeffs);
+
+julia> size(vals)
+(60,)
+```
 """
 function _metric_apply(u_n1::AbstractMatrix, regularise_func, a_coeffs, b_coeffs,
                        matrices::AbstractArray{<:Any,3})
@@ -62,7 +84,16 @@ end
     gram(u_n1, matrices, measure) -> Matrix
 
 Gram matrix of a tensor basis, shape `(n1 C, n1 C)`.
-`G_{ia, Ib} = ⟨φ_i e_a, φ_I e_b⟩ = ∫ φ_i φ_I g(e_a, e_b) dμ`.
+`G_{ia, Ib} = ⟨φ_i e_a, φ_I e_b⟩ = ∫ φ_i φ_I g(e_a, e_b) dμ`. Called through
+[`gram`](@ref), which supplies the right matrices for each space.
+
+# Examples
+```jldoctest
+julia> u = function_basis(dg)[:, 1:2];
+
+julia> size(gram(u, gamma_coords(dg.cache), measure(dg)))
+(4, 4)
+```
 """
 function gram(u_n1::AbstractMatrix, matrices::AbstractArray{<:Any,3}, measure::AbstractVector)
     n1 = size(u_n1, 2)

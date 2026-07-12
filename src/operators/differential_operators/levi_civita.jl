@@ -10,6 +10,22 @@ Weak Levi-Civita connection matrix `∇^{weak}_{Ikl, ij}`, shape `(n1 d², n1 d)
 `⟨∇(φ_i ∇x_j), φ_I dx_k ⊗ dx_l⟩
  = ∫ φ_I Γ(x_k, φ_i) Γ(x_l, x_j) dμ + ∫ φ_i φ_I H(x_j)(∇x_k, ∇x_l) dμ`.
 
+The assembler behind the [`levi_civita`](@ref) operator.
+
+# Examples
+```jldoctest
+julia> W = levi_civita_02_weak(function_basis(dg), gamma_mixed(dg.cache),
+                               gamma_coords(dg.cache), hessian_coords(dg.cache),
+                               measure(dg), n_coefficients(dg));
+
+julia> size(W)                       # (n_coefficients · d², n_coefficients · d)
+(32, 16)
+
+julia> W ≈ weak(levi_civita(dg))
+true
+```
+
+# Arguments
 - `gamma_mixed` `(n, d, n0)`, `gamma_coords` `(n, d, d)`.
 - `hessian_coords` `(n, d, d, d)`: coordinate Hessian `H(x_K)(∇x_i, ∇x_j)`.
 """

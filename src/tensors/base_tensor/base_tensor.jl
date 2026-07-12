@@ -5,7 +5,27 @@
 # methods can dispatch on `ScalarFunction`. Julia's multiple dispatch replaces the
 # Python `__array_ufunc__` / `isinstance` machinery entirely.
 
-"""Pointwise data of a tensor at the sample points, shape `(batch..., n·C)`."""
+"""
+    to_pointwise_basis(t) -> Array
+
+The tensor's values at the sample points, shape `(batch..., n·C)` (`C =
+component_dim`) — the inverse of the `dg_*` factories, up to the basis truncation.
+This is how you get numbers back out of the coefficient world.
+
+# Examples
+```jldoctest
+julia> values = to_pointwise_basis(f);            # f was built from cos θ
+
+julia> size(values)
+(60,)
+
+julia> maximum(abs.(values .- cos.(θ))) < 1e-4    # the 8-mode projection error
+true
+
+julia> size(to_pointwise_basis(grad(f)))          # 60 points × 2 components
+(120,)
+```
+"""
 to_pointwise_basis(t::AbstractTensor) = _to_pointwise_basis(t.coeffs, t.space)
 
 # ── Display ────────────────────────────────────────────────────────────────────
@@ -16,6 +36,35 @@ Base.show(io::IO, t::AbstractTensor) =
           ", batch_shape=", batch_shape(t), ")")
 
 # ── Linear structure ───────────────────────────────────────────────────────────
+"""
+    +(a::AbstractTensor, b::AbstractTensor) -> AbstractTensor
+    -(a::AbstractTensor, b::AbstractTensor) -> AbstractTensor
+    *(s::Number, t::AbstractTensor) -> AbstractTensor
+    /(t::AbstractTensor, s::Number) -> AbstractTensor
+
+Tensors of the same space form a vector space: addition and scalar multiplication act
+on the coefficients, and batch shapes broadcast (numpy right-alignment). Adding
+tensors of *different* spaces is an error — use [`pack`](@ref) if you want them
+side by side.
+
+A `Number` added to a `ScalarFunction` is the constant function of that value; no
+other tensor absorbs a scalar that way.
+
+# Examples
+```jldoctest
+julia> (f + f).coeffs ≈ (2f).coeffs
+true
+
+julia> (f - f).coeffs ≈ zeros(function_space(dg)).coeffs
+true
+
+julia> round((f + 1).coeffs[1]; digits=4)     # φ₀ ≡ 1, so the constant lands there
+1.0
+
+julia> f + grad(f)
+ERROR: AssertionError: Operands must belong to the same space: FunctionSpace(dim=8) vs VectorFieldSpace(dim=16)
+```
+"""
 Base.:-(t::AbstractTensor) = wrap(t.space, -t.coeffs)
 
 function Base.:+(a::AbstractTensor, b::AbstractTensor)
@@ -42,6 +91,30 @@ function _scale_by_batch(t::AbstractTensor, w::AbstractArray{<:Number}, op)
     return wrap(t.space, op.(ct, wt))
 end
 
+"""
+    *(w::AbstractArray, t::AbstractTensor) -> AbstractTensor
+    /(t::AbstractTensor, w::AbstractArray) -> AbstractTensor
+
+A plain numeric array is a bag of *batch-wise scalars*, never a coefficient vector:
+its shape broadcasts against the tensor's batch axes and the coefficient axis is left
+alone. This is what makes a spectral filter work on the batched eigenbasis that
+[`spectrum`](@ref) returns.
+
+# Examples
+Heat-kernel damping of each eigenmode by `exp(-λ)`:
+
+```jldoctest
+julia> evals, evecs = spectrum(laplacian(dg, 0));
+
+julia> batch_shape(evecs)                     # one eigenvector per batch slot
+(8,)
+
+julia> damped = exp.(-evals) .* evecs;        # `.*` is a synonym for `*` here
+
+julia> batch_shape(damped)
+(8,)
+```
+"""
 Base.:*(w::AbstractArray{<:Number}, t::AbstractTensor) = _scale_by_batch(t, w, *)
 Base.:*(t::AbstractTensor, w::AbstractArray{<:Number}) = _scale_by_batch(t, w, *)
 Base.:/(t::AbstractTensor, w::AbstractArray{<:Number}) = _scale_by_batch(t, w, /)
@@ -124,6 +197,32 @@ function _pointwise_divide(t::AbstractTensor, f)
     return wrap(t.space, _from_pointwise_basis(quotient, t.space))
 end
 
+"""
+    *(t::AbstractTensor, f::ScalarFunction) -> AbstractTensor
+    /(t::AbstractTensor, f::ScalarFunction) -> AbstractTensor
+
+Multiplying (or dividing) any tensor by a `ScalarFunction` is the *pointwise* product:
+the values are multiplied at each sample point and the result is projected back onto
+the basis. Two functions multiply pointwise as well.
+
+Because it round-trips through the sample points, `f * g` is not exactly bilinear in
+the coefficients — it is the projection of the true product, and modes above the
+truncation are lost.
+
+# Examples
+```jldoctest
+julia> squared = f * f;                       # cos²θ
+
+julia> maximum(abs.(to_pointwise_basis(squared) .- cos.(θ) .^ 2)) < 1e-3
+true
+
+julia> f * grad(f)                            # scaling a vector field by a function
+VectorField(space=VectorFieldSpace(dim=16), shape=(16,), batch_shape=())
+```
+
+Division floors the denominator at `1e-12`, so dividing by a function with zeros is
+survivable but meaningless there.
+"""
 # Function × Function is a pointwise product (most specific dispatch).
 Base.:*(f::ScalarFunction, g::ScalarFunction) = _pointwise_product(f, g)
 Base.:/(f::ScalarFunction, g::ScalarFunction) = _pointwise_divide(f, g)
@@ -133,7 +232,20 @@ Base.:*(t::AbstractTensor, f::ScalarFunction) = _pointwise_product(t, f)
 Base.:*(f::ScalarFunction, t::AbstractTensor) = _pointwise_product(t, f)
 Base.:/(t::AbstractTensor, f::ScalarFunction) = _pointwise_divide(t, f)
 
-# ── Pointwise exponentiation of a function ─────────────────────────────────────
+"""
+    ^(f::ScalarFunction, p::Number) -> ScalarFunction
+
+Pointwise power: raise the function's *values* to `p` and project back onto the basis.
+
+# Examples
+```jldoctest
+julia> maximum(abs.(to_pointwise_basis(f^2) .- to_pointwise_basis(f * f))) < 1e-12
+true
+
+julia> to_pointwise_basis(f^0) ≈ ones(60)     # every value to the zeroth power
+true
+```
+"""
 function Base.:^(f::ScalarFunction, p::Number)
     data = to_pointwise_basis(f)
     return dg_function(geometry(f), data .^ p)

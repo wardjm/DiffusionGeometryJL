@@ -24,6 +24,30 @@ Python original inherits whatever sign LAPACK happens to return, which is not
 portable across BLAS implementations). We canonicalise each eigenvector's sign so
 its largest-magnitude entry is positive, making the result deterministic; the
 parity fixture applies the same canonicalisation.
+
+# Examples
+The heat equation `∂ₜu = -Δu` on the circle, from `u₀ = cos θ`. That is (almost
+exactly) the `λ = 1` eigenfunction, so it should decay by `e^{-t}` and keep its shape:
+
+```jldoctest
+julia> u = solve_differential_operator(-laplacian(dg, 0), f, [0.0, 0.5, 1.0])
+ScalarFunction(space=FunctionSpace(dim=8), shape=(3, 8), batch_shape=(3,))
+
+julia> u.coeffs[1, :] ≈ f.coeffs               # t = 0 returns the initial condition
+true
+
+julia> round.(l2_norm(u); digits=3)            # ‖u(t)‖ = e^{-t}‖u₀‖
+3-element Vector{Float64}:
+ 0.707
+ 0.429
+ 0.26
+
+julia> round(exp(-1) * l2_norm(f); digits=3)   # the expected value at t = 1
+0.26
+```
+
+Run it backwards (`+Δ`) and the same modes grow instead — which is exactly why the
+backward heat equation is unstable, and the solver will happily show you that.
 """
 function solve_differential_operator(operator::LinearOperator,
                                      initial_condition::AbstractTensor,

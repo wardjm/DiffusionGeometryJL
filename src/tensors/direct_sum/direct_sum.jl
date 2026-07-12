@@ -5,7 +5,28 @@
 # matrix and its inverse are block-diagonal, and the metric is the sum of the
 # summands' metrics.
 
-"""Direct sum of tensor spaces sharing a `DiffusionGeometry`."""
+"""
+    DirectSumSpace(dg, spaces)
+
+Direct sum of tensor spaces sharing a `DiffusionGeometry`, built with `+`. Coefficients
+of the summands are concatenated; the Gram matrix is block-diagonal, and the metric is
+the sum of the summands' metrics. Nested sums are flattened.
+
+This is what lets a *system* of tensors be one vector — a mixed-degree operator built
+with [`block`](@ref) has a direct sum as its domain.
+
+# Examples
+```jldoctest
+julia> ds = function_space(dg) + vector_field_space(dg)
+DirectSumSpace(spaces=[FunctionSpace, VectorFieldSpace], dim=24)
+
+julia> space_dim(ds) == space_dim(function_space(dg)) + space_dim(vector_field_space(dg))
+true
+
+julia> (function_space(dg) + vector_field_space(dg)) + form_space(dg, 1)   # flattened
+DirectSumSpace(spaces=[FunctionSpace, VectorFieldSpace, FormSpace], dim=40)
+```
+"""
 struct DirectSumSpace <: AbstractTensorSpace
     dg::DiffusionGeometry
     spaces::Tuple{Vararg{AbstractTensorSpace}}
@@ -24,7 +45,25 @@ struct DirectSumSpace <: AbstractTensorSpace
     end
 end
 
-"""An element of a direct sum, storing concatenated coefficients."""
+"""
+    DirectSumElement
+
+An element of a [`DirectSumSpace`](@ref), storing the summands' coefficients end to end.
+Build one with [`pack`](@ref) and take it apart with [`unpack`](@ref).
+
+# Examples
+```jldoctest
+julia> ds = function_space(dg) + vector_field_space(dg);
+
+julia> e = pack(ds, f, grad(f))
+DirectSumElement(space=DirectSumSpace(spaces=[FunctionSpace, VectorFieldSpace], dim=24), shape=(24,), batch_shape=())
+
+julia> a, X = unpack(e);
+
+julia> a.coeffs == f.coeffs, X.coeffs == grad(f).coeffs
+(true, true)
+```
+"""
 struct DirectSumElement{A<:AbstractArray} <: AbstractTensor
     space::DirectSumSpace
     coeffs::A
@@ -54,14 +93,61 @@ function wrap(ds::DirectSumSpace, coeffs::AbstractArray)
     return DirectSumElement(ds, coeffs)
 end
 
+"""
+    split_coeffs(ds, coeffs) -> Tuple
+
+Split a direct-sum coefficient array into one array per summand (a tuple, in the
+summands' order). The coefficient-level counterpart of [`unpack`](@ref).
+
+# Examples
+```jldoctest
+julia> ds = function_space(dg) + vector_field_space(dg);
+
+julia> parts = split_coeffs(ds, pack(ds, f, grad(f)).coeffs);
+
+julia> size.(parts)
+((8,), (16,))
+```
+"""
 split_coeffs(ds::DirectSumSpace, coeffs::AbstractArray) =
     Tuple(copy(selectdim(coeffs, ndims(coeffs), r)) for r in _coeff_ranges(ds))
 
-"""Split a direct-sum element into its wrapped component tensors."""
+"""
+    unpack(e::DirectSumElement) -> Tuple
+
+Split a direct-sum element back into its component tensors, each wrapped in its own
+space. The inverse of [`pack`](@ref).
+
+# Examples
+```jldoctest
+julia> ds = function_space(dg) + vector_field_space(dg);
+
+julia> unpack(pack(ds, f, grad(f)))
+(ScalarFunction(space=FunctionSpace(dim=8), shape=(8,), batch_shape=()), VectorField(space=VectorFieldSpace(dim=16), shape=(16,), batch_shape=()))
+```
+"""
 unpack(e::DirectSumElement) =
     Tuple(wrap(s, c) for (s, c) in zip(e.space.spaces, split_coeffs(e.space, e.coeffs)))
 
-"""Combine one tensor per summand into a `DirectSumElement`."""
+"""
+    pack(ds::DirectSumSpace, tensors...) -> DirectSumElement
+
+Combine one tensor per summand (in order, sharing a batch shape) into a single element
+of the direct sum. Inverted by [`unpack`](@ref).
+
+# Examples
+```jldoctest
+julia> ds = function_space(dg) + vector_field_space(dg);
+
+julia> e = pack(ds, f, grad(f));
+
+julia> length(e.coeffs)                     # 8 + 16
+24
+
+julia> pack(ds, f)                          # one tensor short
+ERROR: AssertionError: Expected 2 tensors, received 1
+```
+"""
 function pack(ds::DirectSumSpace, tensors...)
     @assert length(tensors) == length(ds.spaces) "Expected $(length(ds.spaces)) tensors, received $(length(tensors))"
     bshape = batch_shape(tensors[1])

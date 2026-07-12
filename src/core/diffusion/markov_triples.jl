@@ -10,6 +10,19 @@ using LinearAlgebra: I
 Coefficient-form Markov triple `(M, μ, Γ)`: coefficient functions `function_basis`
 `(n, n0)`, measure `measure` `(n,)`, a carré du champ callback `cdc(f, h)`, and an
 optional `regularise` map (defaults to `identity`).
+
+This is the whole of the "diffusion" input to the geometry: a basis to expand in, a
+measure to integrate against, and a carré du champ to differentiate with. Everything
+else in the package is derived from it.
+
+# Examples
+```jldoctest
+julia> t = MarkovTriple(ones(3, 1), fill(1/3, 3), (f, h) -> zeros(3))
+MarkovTriple(n=3, n_function_basis=1)
+
+julia> t.n, t.n_function_basis
+(3, 1)
+```
 """
 struct MarkovTriple{C,R}
     function_basis::Matrix{Float64}
@@ -27,7 +40,41 @@ function MarkovTriple(function_basis::AbstractMatrix, measure::AbstractVector, c
         Matrix{Float64}(function_basis), Vector{Float64}(measure), cdc, regularise, n, n0)
 end
 
+Base.show(io::IO, t::MarkovTriple) =
+    print(io, "MarkovTriple(n=", t.n, ", n_function_basis=", t.n_function_basis, ")")
+
+"""
+    cdc(triple, f, h) -> Array
+
+Apply the triple's carré du champ: `Γ(f, h)`, the diffusion-geometric stand-in for
+`∇f · ∇h`. `f` and `h` carry a leading point axis; the trailing axes of each appear
+in order in the result.
+
+# Examples
+```jldoctest
+julia> Γ = cdc(dg.triple, dg.triple.immersion_coords, dg.triple.immersion_coords);
+
+julia> size(Γ)                       # the (n, d, d) first fundamental form
+(60, 2, 2)
+```
+"""
 cdc(t::MarkovTriple, f, h) = t.cdc(f, h)
+
+"""
+    regularise(triple, x) -> Array
+
+Apply the triple's regularisation map to `x` (leading axis = points). Depending on
+how the triple was built this is a diffusion step ([`regularise_diffusion`](@ref)), a
+spectral projection ([`regularise_bandlimit`](@ref)), or the identity.
+
+# Examples
+```jldoctest
+julia> noisy = gamma_coords(dg.cache);
+
+julia> size(regularise(dg.triple, noisy))         # smoothed, same shape
+(60, 2, 2)
+```
+"""
 regularise(t::MarkovTriple, x) = t.regularise(x)
 
 """
@@ -35,6 +82,19 @@ regularise(t::MarkovTriple, x) = t.regularise(x)
 
 `MarkovTriple` plus an immersion `x : M → ℝ^d` (`immersion_coords` `(n, d)`),
 required to generate the tensor algebra as an A-module.
+
+The immersion is what generates the tensor algebra: the coordinate functions `xⱼ`
+give the frame `∇xⱼ` that every vector field and form is expanded in. It is the
+extra ingredient a [`DiffusionGeometry`](@ref) needs beyond the diffusion itself.
+
+# Examples
+```jldoctest
+julia> dg.triple
+ImmersedMarkovTriple(n=60, dim=2, n_function_basis=8)
+
+julia> size(dg.triple.immersion_coords), size(dg.triple.function_basis)
+((60, 2), (60, 8))
+```
 """
 struct ImmersedMarkovTriple{C,R}
     base::MarkovTriple{C,R}
@@ -59,16 +119,35 @@ Base.getproperty(t::ImmersedMarkovTriple, s::Symbol) =
     s in (:function_basis, :measure, :n, :n_function_basis) ?
         getfield(getfield(t, :base), s) : getfield(t, s)
 
+Base.show(io::IO, t::ImmersedMarkovTriple) =
+    print(io, "ImmersedMarkovTriple(n=", t.n, ", dim=", t.dim,
+          ", n_function_basis=", t.n_function_basis, ")")
+
 """
     immersed_triple_from_knn_kernel(nbr_indices, kernel, immersion_coords; kwargs...)
 
 Resolve measure and function basis from the symmetric kernel, wire the cdc and
-regularisation closures, and return an [`ImmersedMarkovTriple`]. Mirrors
+regularisation closures, and return an [`ImmersedMarkovTriple`](@ref). Mirrors
 `DiffusionGeometry.from_knn_kernel`.
 
 Keyword args: `bandwidths`, `n_function_basis=50`, `regularisation_method="diffusion"`
 (`"diffusion"`/`"bandlimit"`/`"none"`), `measure`, `function_basis`,
 `use_mean_centres=true`, `data_matrix`.
+
+Use this when you already have a kernel — from another diffusion-maps
+implementation, say. [`from_knn_kernel`](@ref) wraps it in a
+[`DiffusionGeometry`](@ref).
+
+# Examples
+```jldoctest
+julia> kernel, bandwidths = markov_chain(knn_graph(circle, 16)...);
+
+julia> nbrs = knn_graph(circle, 16)[2];
+
+julia> immersed_triple_from_knn_kernel(nbrs, kernel, circle;
+                                       bandwidths=bandwidths, n_function_basis=8)
+ImmersedMarkovTriple(n=60, dim=2, n_function_basis=8)
+```
 """
 function immersed_triple_from_knn_kernel(nbr_indices::AbstractMatrix{<:Integer},
                                          kernel::AbstractMatrix,
@@ -121,7 +200,16 @@ end
 Full pipeline: kNN graph → Markov chain → symmetric kernel → basis → triple.
 Mirrors `DiffusionGeometry.from_point_cloud`. Keyword args add `immersion_coords`
 (defaults to `data_matrix`), `knn_kernel=32`, `c=0`, `bandwidth_variability=-0.5`,
-`knn_bandwidth=8` on top of [`immersed_triple_from_knn_kernel`].
+`knn_bandwidth=8` on top of [`immersed_triple_from_knn_kernel`](@ref).
+
+The triple underneath [`from_point_cloud`](@ref) — reach for it only if you want the
+triple without the geometry wrapped around it.
+
+# Examples
+```jldoctest
+julia> immersed_triple_from_point_cloud(circle; knn_kernel=16, n_function_basis=8)
+ImmersedMarkovTriple(n=60, dim=2, n_function_basis=8)
+```
 """
 function immersed_triple_from_point_cloud(data_matrix::AbstractMatrix;
                                           immersion_coords=nothing,
@@ -150,7 +238,7 @@ end
 """
     immersed_triple_from_graph_kernel(edge_index, kernel, immersion_coords; kwargs...)
 
-Build an [`ImmersedMarkovTriple`] from a precomputed kernel on an arbitrary
+Build an [`ImmersedMarkovTriple`](@ref) from a precomputed kernel on an arbitrary
 directed graph. `edge_index` is `(2, num_edges)` with **1-based** node indices
 (row 1 source, row 2 target); `kernel` is the length-`num_edges` weight vector.
 Mirrors `DiffusionGeometry.from_graph_kernel`.
@@ -158,6 +246,22 @@ Mirrors `DiffusionGeometry.from_graph_kernel`.
 Keyword args: `bandwidths=nothing`, `measure=nothing` (defaults to the
 source-weighted degree, normalised), `function_basis=nothing` (defaults to the
 `n×n` identity), `use_mean_centres=false`.
+
+Note the defaults differ from the kNN path: the function basis is the *pointwise*
+identity (no spectral truncation) and the covariance is centred on the node's own
+value, not the neighbourhood mean.
+
+# Examples
+A directed 3-cycle, with weights on the edges:
+
+```jldoctest
+julia> edges = [1 2 3; 2 3 1];              # 1 → 2 → 3 → 1
+
+julia> coords = Matrix{Float64}(I, 3, 3);
+
+julia> immersed_triple_from_graph_kernel(edges, [1.0, 1.0, 1.0], coords)
+ImmersedMarkovTriple(n=3, dim=3, n_function_basis=3)
+```
 """
 function immersed_triple_from_graph_kernel(edge_index::AbstractMatrix{<:Integer},
                                            kernel::AbstractVector, immersion_coords;
@@ -181,11 +285,25 @@ end
 """
     immersed_triple_from_edges(edge_index; immersion_coords=nothing, kwargs...)
 
-Build an [`ImmersedMarkovTriple`] from a graph given only its edges, with the
+Build an [`ImmersedMarkovTriple`](@ref) from a graph given only its edges, with the
 row-stochastic kernel `w_{ji} = 1/d(i)` (`d(i)` the in-degree of target `i`) and
 measure `μ(i) = d(i)`. `edge_index` is `(2, num_edges)`, **1-based** (row 1 source,
 row 2 target). Without `immersion_coords`, `n = maximum(edge_index)` and the
 immersion defaults to the `n×n` identity. Mirrors `DiffusionGeometry.from_edges`.
+
+The lightest way in: hand it a graph and it invents the rest. Combinatorial rather
+than metric — this is the path to use for a graph that is not sampled from anything.
+
+# Examples
+A 4-cycle, undirected (each edge listed both ways):
+
+```jldoctest
+julia> edges = [1 2 3 4 2 3 4 1;
+                2 3 4 1 1 2 3 4];
+
+julia> immersed_triple_from_edges(edges)
+ImmersedMarkovTriple(n=4, dim=4, n_function_basis=4)
+```
 """
 function immersed_triple_from_edges(edge_index::AbstractMatrix{<:Integer};
                                     immersion_coords=nothing, kwargs...)

@@ -12,6 +12,24 @@ using LinearAlgebra: adjoint
 Regularise `x` by one diffusion step: `x_reg[p] = Σ_j kernel[p,j] * x[nbr_indices[p,j]]`.
 `kernel` and `nbr_indices` are `(n, k)`; `nbr_indices` is 1-based. `x` has shape
 `(n, tail...)` and the result has the same shape.
+
+The default regularisation of a geometry built from a point cloud: it is the local
+average that damps the pointwise noise in the carré du champ.
+
+# Examples
+Three points in a ring, each averaging itself with its successor:
+
+```jldoctest
+julia> kernel = fill(0.5, 3, 2);
+
+julia> nbrs = [1 2; 2 3; 3 1];                # point p, then its successor
+
+julia> regularise_diffusion([1.0, 2.0, 3.0], kernel, nbrs)
+3-element Vector{Float64}:
+ 1.5
+ 2.5
+ 2.0
+```
 """
 function regularise_diffusion(x::AbstractArray, kernel::AbstractMatrix,
                               nbr_indices::AbstractMatrix{<:Integer})
@@ -41,6 +59,23 @@ end
 Regularise `x` by projecting onto the span of the coefficient functions `u`
 (shape `(n, n0)`) under the measure `measure` (shape `(n,)`):
 `x_reg = u * (u' * (measure .* x))`. `x` has shape `(n, tail...)`.
+
+The alternative to [`regularise_diffusion`](@ref), selected with
+`regularisation_method="bandlimit"`: instead of averaging locally, it discards
+everything outside the span of the eigenfunction basis.
+
+# Examples
+Band-limiting to the constant function alone leaves the μ-weighted mean:
+
+```jldoctest
+julia> u = ones(3, 1);                        # φ₀ ≡ 1, the only basis function
+
+julia> regularise_bandlimit([1.0, 2.0, 3.0], u, fill(1/3, 3))
+3-element Vector{Float64}:
+ 2.0
+ 2.0
+ 2.0
+```
 """
 function regularise_bandlimit(x::AbstractArray, u::AbstractMatrix, measure::AbstractVector)
     n = size(u, 1)

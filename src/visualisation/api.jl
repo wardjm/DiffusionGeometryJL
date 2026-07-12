@@ -12,7 +12,7 @@
 """Diverging blue → grey → red colour map, the package default for signed fields."""
 const DIVERGING_COLORMAP = ["#166dde", "#d3d3d3", "#e32636"]
 
-"""Cyclic variant of [`DIVERGING_COLORMAP`], for angle-valued fields on `[0, 2π]`."""
+"""Cyclic variant of [`DIVERGING_COLORMAP`](@ref), for angle-valued fields on `[0, 2π]`."""
 const CYCLIC_COLORMAP = ["#166dde", "#d3d3d3", "#e32636", "#166dde"]
 
 """
@@ -23,11 +23,11 @@ Plot a tensor over the point cloud it lives on, choosing the visual from its typ
 
 | argument                     | visual                                        |
 |:-----------------------------|:----------------------------------------------|
-| [`ScalarFunction`]           | scatter, coloured by value                    |
-| [`VectorField`], 1-[`Form`]  | quiver of ambient arrows                      |
-| 2-[`Form`]                   | oriented discs (`d = 2` filled, `d = 3` pairs) |
-| 3-[`Form`]                   | scatter sized and coloured by `ω₁₂₃`          |
-| [`Tensor02`], [`Tensor02Sym`]| ellipses (`d = 2`) or ellipsoids (`d = 3`)    |
+| [`ScalarFunction`](@ref)           | scatter, coloured by value                    |
+| [`VectorField`](@ref), 1-[`Form`](@ref)  | quiver of ambient arrows                      |
+| 2-[`Form`](@ref)                   | oriented discs (`d = 2` filled, `d = 3` pairs) |
+| 3-[`Form`](@ref)                   | scatter sized and coloured by `ω₁₂₃`          |
+| [`Tensor02`](@ref), [`Tensor02Sym`](@ref)| ellipses (`d = 2`) or ellipsoids (`d = 3`)    |
 
 The points come from `immersion_coords(geometry(tensor))` and the values from
 `to_ambient(tensor)`, so `dgplot(X)` is the whole of the Python idiom
@@ -42,12 +42,29 @@ ratio — coordinates on an embedded manifold carry no meaning of their own. Pas
 into an axis you own and leaves it alone.
 
 Requires a Makie backend (`using GLMakie` or `using CairoMakie`). Other keyword arguments
-are forwarded to the underlying recipe — see [`dgscatter`], [`dgquiver`],
-[`dg2form`], [`dg3form`] and [`dgellipsoids`] for the attributes each accepts.
+are forwarded to the underlying recipe — see [`dgscatter`](@ref), [`dgquiver`](@ref),
+[`dg2form`](@ref), [`dg3form`](@ref) and [`dgellipsoids`](@ref) for the attributes each accepts.
+
+# Examples
+```julia
+using GLMakie, DiffusionGeometryJ
+
+θ = range(0, 2π; length=61)[1:60]
+dg = from_point_cloud([cos.(θ) sin.(θ)]; knn_kernel=16, n_function_basis=8)
+f = dg_function(dg, cos.(θ))
+
+dgplot(f)                        # the function, as a coloured scatter
+dgplot(grad(f); scale=0.3)       # its gradient, as a quiver
+dgplot(hessian(f))               # its Hessian, as ellipses
+
+fig, ax, _ = dgplot(f)           # the Makie figure/axis/plot, as usual
+dgplot!(ax, grad(f))             # draw the quiver over it
+fig
+```
 """
 function dgplot end
 
-"""See [`dgplot`]."""
+"""See [`dgplot`](@ref)."""
 function dgplot! end
 
 """
@@ -56,11 +73,11 @@ function dgplot! end
 Scatter `points` (an `(n, d)` matrix or vector of `Point`s) coloured by `values`.
 `colorrange` defaults to the symmetric range `(-a, a)` with `a = maximum(abs, values)`,
 so zero sits at the centre of the diverging colour map. Pass `cyclic = true` for
-angle-valued data, which instead uses `(0, 2π)` and [`CYCLIC_COLORMAP`].
+angle-valued data, which instead uses `(0, 2π)` and [`CYCLIC_COLORMAP`](@ref).
 """
 function dgscatter end
 
-"""See [`dgscatter`]."""
+"""See [`dgscatter`](@ref)."""
 function dgscatter! end
 
 """
@@ -77,7 +94,7 @@ arrow length.
 """
 function dgquiver end
 
-"""See [`dgquiver`]."""
+"""See [`dgquiver`](@ref)."""
 function dgquiver! end
 
 """
@@ -85,14 +102,14 @@ function dgquiver! end
 
 Visualise a 2-form given by ambient skew-symmetric `matrices` of shape `(n, d, d)`.
 
-In `d = 2` the form reduces (via [`hodge_star_2_form`]) to a scalar, drawn as filled
+In `d = 2` the form reduces (via [`hodge_star_2_form`](@ref)) to a scalar, drawn as filled
 discs whose radius tracks magnitude and whose colour tracks sign. In `d = 3` it
 reduces to an axial vector, drawn as a pair of discs normal to it — red on the
 positive face, blue on the negative — so the orientation is visible from either side.
 """
 function dg2form end
 
-"""See [`dg2form`]."""
+"""See [`dg2form`](@ref)."""
 function dg2form! end
 
 """
@@ -103,7 +120,7 @@ Visualise a 3-form on a 3-dimensional immersion, given by ambient `tensors` of s
 """
 function dg3form end
 
-"""See [`dg3form`]."""
+"""See [`dg3form`](@ref)."""
 function dg3form! end
 
 """
@@ -119,7 +136,7 @@ Asymmetric input is symmetrised — an ellipsoid can only represent the symmetri
 """
 function dgellipsoids end
 
-"""See [`dgellipsoids`]."""
+"""See [`dgellipsoids`](@ref)."""
 function dgellipsoids! end
 
 """
@@ -132,7 +149,7 @@ of `λ`. Used for Hessian eigen-directions.
 """
 function dgeiglines end
 
-"""See [`dgeiglines`]."""
+"""See [`dgeiglines`](@ref)."""
 function dgeiglines! end
 
 """
@@ -144,19 +161,27 @@ spacing of `points` so the quads sit flush with the cloud.
 """
 function dgtangentplanes end
 
-"""See [`dgtangentplanes`]."""
+"""See [`dgtangentplanes`](@ref)."""
 function dgtangentplanes! end
 
 """
     dganimate(ft, filename; framerate=30, kwargs...)
 
 Record the time evolution of a batched tensor `ft` — as returned by
-[`solve_differential_operator`] with a leading time axis — to `filename`
+[`solve_differential_operator`](@ref) with a leading time axis — to `filename`
 (`.mp4` or `.gif`, chosen by extension). Returns `filename`.
 
 The colour range is held fixed across frames (spanning all of `ft` unless
 `colorrange` is given) so the animation shows the field decaying rather than
 being renormalised each frame. Replaces the Python `methods/pde.py::gif_from_functions`.
+
+# Examples
+```julia
+using GLMakie, DiffusionGeometryJ
+
+u = solve_differential_operator(-laplacian(dg, 0), f, range(0, 2; length=60))
+dganimate(u, "heat.mp4"; framerate=30)
+```
 """
 function dganimate end
 

@@ -15,6 +15,26 @@ _sum_spaces(spaces) = reduce(+, spaces)
 Assemble a rectangular grid of operators, e.g. `block([[A, B], [C, D]])`. Every
 operator in column `j` must share a domain, and every operator in row `i` a
 codomain; the result maps `⊕ⱼ domainⱼ → ⊕ᵢ codomainᵢ`.
+
+The way to build a coupled system — a mixed-degree operator on functions *and* vector
+fields is one `LinearOperator` on their direct sum, with a spectrum and an inverse like
+any other.
+
+# Examples
+The identity on `A ⊕ 𝔛(M)`, assembled from four blocks:
+
+```jldoctest
+julia> A, V = function_space(dg), vector_field_space(dg);
+
+julia> M = block([[identity_operator(A)   zero_operator(V, A)],
+                  [zero_operator(A, V)    identity_operator(V)]])
+LinearOperator(domain=DirectSumSpace(spaces=[FunctionSpace, VectorFieldSpace], dim=24), codomain=DirectSumSpace(spaces=[FunctionSpace, VectorFieldSpace], dim=24), shape=(24, 24))
+
+julia> e = pack(A + V, f, grad(f));
+
+julia> M(e).coeffs ≈ e.coeffs
+true
+```
 """
 function block(block_rows)
     @assert !isempty(block_rows) "Provide at least one row of operator blocks"
@@ -50,13 +70,35 @@ function block(block_rows)
     return LinearOperator(full_domain, full_codomain; weak_matrix=full_weak)
 end
 
-"""Horizontally stack operators sharing a codomain: `[A B]`."""
+"""
+    hstack(blocks) -> LinearOperator
+
+Stack operators side by side: `[A B] : domain_A ⊕ domain_B → codomain`. They must share
+a codomain.
+
+# Examples
+```jldoctest
+julia> hstack([grad(dg), identity_operator(vector_field_space(dg))])
+LinearOperator(domain=DirectSumSpace(spaces=[FunctionSpace, VectorFieldSpace], dim=24), codomain=VectorFieldSpace(dim=16), shape=(16, 24))
+```
+"""
 function hstack(blocks)
     @assert !isempty(blocks) "hstack requires at least one operator"
     return block([collect(blocks)])
 end
 
-"""Vertically stack operators sharing a domain: `[A; B]`."""
+"""
+    vstack(blocks) -> LinearOperator
+
+Stack operators on top of each other: `[A; B] : domain → codomain_A ⊕ codomain_B`. They
+must share a domain.
+
+# Examples
+```jldoctest
+julia> vstack([grad(dg), grad(dg)])
+LinearOperator(domain=FunctionSpace(dim=8), codomain=DirectSumSpace(spaces=[VectorFieldSpace, VectorFieldSpace], dim=32), shape=(32, 8))
+```
+"""
 function vstack(blocks)
     @assert !isempty(blocks) "vstack requires at least one operator"
     return block([[op] for op in blocks])

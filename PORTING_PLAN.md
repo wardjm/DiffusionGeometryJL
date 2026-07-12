@@ -412,7 +412,7 @@ sets `self.xp = numpy`) is excluded.
 
 **Upstream bugs.** Four defects found in the Python reference over the course of the
 port are catalogued — with reproductions, root causes and patches — in
-[`docs/upstream-bugs.md`](docs/upstream-bugs.md).
+[`docs/src/upstream-bugs.md`](docs/src/upstream-bugs.md).
 
 **Harness conventions established** (also in `README.md`): 1-based indexing with
 the `v .+ 1` parity convention; `NPZ.jl` cannot read zero-element arrays, so the

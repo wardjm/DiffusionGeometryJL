@@ -21,6 +21,9 @@ include("pysuite.jl")
     include("test_notebooks.jl")
     include("test_makie_ext.jl")
 
+    # The docstring examples: they assert behaviour, so they are tests.
+    include("doctests.jl")
+
     # Ports of the upstream Python suite (property tests, no fixtures).
     @testset "python tests/test_src" begin
         include("test_pysrc.jl")

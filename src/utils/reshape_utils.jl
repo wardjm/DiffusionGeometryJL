@@ -11,7 +11,34 @@
 
 Reshape `A` with numpy C-order (row-major) semantics, so the result matches
 `numpy.reshape(A, dims)` element-for-element. Used to flatten the multi-index
-weak-operator tensors into the matrices the parity fixtures store.
+weak-operator tensors into the matrices the parity fixtures store, and to lay out
+every coefficient vector in the package (`(i, a) ↦ i·C + a`, basis index slowest).
+
+# Examples
+Reading order is by rows, not columns — this is what `Base.reshape` would *not* do:
+
+```jldoctest
+julia> np_reshape([1 2 3; 4 5 6], 3, 2)
+3×2 Matrix{Int64}:
+ 1  2
+ 3  4
+ 5  6
+
+julia> reshape([1 2 3; 4 5 6], 3, 2)      # Julia's column-major reshape, for contrast
+3×2 Matrix{Int64}:
+ 1  5
+ 4  3
+ 2  6
+```
+
+It round-trips, so a flattened coefficient vector can always be unpacked again:
+
+```jldoctest
+julia> A = reshape(1:12, 2, 2, 3);
+
+julia> np_reshape(np_reshape(A, 2, 6), 2, 2, 3) == A
+true
+```
 """
 function np_reshape(A::AbstractArray, dims::Integer...)
     nin = ndims(A)
