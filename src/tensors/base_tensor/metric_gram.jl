@@ -49,15 +49,9 @@ returning `(batch..., n)`. `u_n1` is `(n, n1)`; `matrices` `(n, C, C)`. The kern
 behind [`metric_apply`](@ref) and hence [`g`](@ref) — the result is regularised before
 it is returned.
 
-# Examples
-```jldoctest
-julia> X = grad(f);
-
-julia> vals = metric_apply(vector_field_space(dg), X.coeffs, X.coeffs);
-
-julia> size(vals)
-(60,)
-```
+Takes the space apart into raw arrays, so it is called with `u_n1` and `matrices` rather
+than a space; see [`metric_apply`](@ref) for a worked example through the public entry
+point.
 """
 function _metric_apply(u_n1::AbstractMatrix, regularise_func, a_coeffs, b_coeffs,
                        matrices::AbstractArray{<:Any,3})

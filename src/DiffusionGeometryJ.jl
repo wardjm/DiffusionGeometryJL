@@ -59,6 +59,8 @@ export function_space, vector_field_space, form_space, tensor02_space, tensor02s
 export dg_function, dg_vector_field, dg_form, dg_tensor02, dg_tensor02sym
 export g, inner, l2_norm, pointwise_norm
 export AbstractTensor, AbstractTensorSpace
+# The tensor/space accessors: the read side of every tensor a user holds.
+export coeffs, space, geometry, batch_shape, space_degree
 export FunctionSpace, VectorFieldSpace, FormSpace, Tensor02Space, Tensor02SymSpace,
        DirectSumSpace
 export ScalarFunction, VectorField, Form, Tensor02, Tensor02Sym, DirectSumElement

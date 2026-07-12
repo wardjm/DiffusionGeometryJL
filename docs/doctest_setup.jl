@@ -10,14 +10,10 @@ const DOCTEST_SETUP = quote
     using DiffusionGeometryJ
     using LinearAlgebra
 
-    # The unexported helpers documented on the "Utilities" page. Their examples are
-    # written as if they were exported, so bring them into scope here.
-    using DiffusionGeometryJ: np_reshape, broadcast_batch_shape, pad_batch_dims,
-        align_batch_pair, broadcast_batch_to, broadcast_flatten_batch,
-        infer_batch_shape, flatten_batch_dims, restore_batch_dims,
-        _from_pointwise_basis, _to_pointwise_basis, _is_orthonormal, _gram_spectrum,
-        gamma_coords_regularised, regularise_fn,
-        coeffs, space, geometry, batch_shape, space_degree
+    # Nothing unexported is imported here on purpose. The internal helpers documented on
+    # the "Utilities" page (`np_reshape`, the batch helpers, `_from_pointwise_basis`) are
+    # *not* exported, so their examples spell them `DiffusionGeometryJ.np_reshape(...)` —
+    # as a reader would have to.
 
     # 60 points on the unit circle in ℝ² — the running example. Its intrinsic
     # dimension is 1, but the carré du champ lives in the d = 2 ambient basis.
@@ -30,11 +26,11 @@ const DOCTEST_SETUP = quote
 
     # 200 points on the unit 2-sphere in ℝ³ (Fibonacci lattice), for the examples
     # that need a surface: 2-forms, curvature, the Hodge star.
-    let n = 200, ϕ = (1 + sqrt(5)) / 2
+    sphere = let n = 200, ϕ = (1 + sqrt(5)) / 2
         z = [1 - 2 * (i - 0.5) / n for i in 1:n]
         r = sqrt.(max.(1 .- z .^ 2, 0.0))
         ψ = [2π * (i - 1) / ϕ for i in 1:n]
-        global sphere = [r .* cos.(ψ) r .* sin.(ψ) z]
+        [r .* cos.(ψ) r .* sin.(ψ) z]
     end
     dg3 = from_point_cloud(sphere; knn_kernel=20, n_function_basis=12)
 end

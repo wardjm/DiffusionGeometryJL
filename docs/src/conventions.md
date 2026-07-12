@@ -41,7 +41,7 @@ carries its own [`broadcast_batch_shape`](@ref).
 julia> batch_shape(dg_function(dg, ones(3, 60)))     # three functions in one tensor
 (3,)
 
-julia> broadcast_batch_shape((3, 4), (4,))           # right-aligned
+julia> DiffusionGeometryJ.broadcast_batch_shape((3, 4), (4,))           # right-aligned
 (3, 4)
 ```
 

@@ -26,7 +26,7 @@ coefficients 2 and 3 are non-zero — and by Parseval they carry all of its L² 
 `∫cos²θ = 1/2`:
 
 ```jldoctest
-julia> c = _from_pointwise_basis(reshape(cos.(θ), 60, 1), function_space(dg));
+julia> c = DiffusionGeometryJ._from_pointwise_basis(reshape(cos.(θ), 60, 1), function_space(dg));
 
 julia> findall(>(1e-3), abs.(c))          # supported on the λ = 1 eigenspace alone
 2-element Vector{Int64}:
@@ -75,7 +75,7 @@ Evaluating the coefficients of `f` back at the 60 sample points recovers `cos θ
 to the error of the 8-function truncation:
 
 ```jldoctest
-julia> values = _to_pointwise_basis(f.coeffs, function_space(dg); basis_count=8);
+julia> values = DiffusionGeometryJ._to_pointwise_basis(f.coeffs, function_space(dg); basis_count=8);
 
 julia> size(values)
 (60,)

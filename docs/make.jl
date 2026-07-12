@@ -10,7 +10,8 @@ makedocs(;
     modules=[DiffusionGeometryJ],
     doctest=true,
     checkdocs=:exports,          # every exported name must appear in an @docs block
-    warnonly=[:missing_docs],
+    # No `warnonly`: an undocumented export, a broken doctest or a dead cross-reference
+    # must fail the build, not warn.
     format=Documenter.HTML(;
         canonical="https://wardjm.github.io/DiffusionGeometryJ",
         prettyurls=get(ENV, "CI", "false") == "true",
