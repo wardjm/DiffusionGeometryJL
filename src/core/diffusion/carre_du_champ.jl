@@ -50,49 +50,167 @@ function carre_du_champ_knn(f::AbstractArray, h::AbstractArray,
     h_tail = size(h)[2:end]
     F = prod(f_tail; init=1)
     H = prod(h_tail; init=1)
-    f_flat = reshape(f, n, F)                     # 1-D tail ⇒ layout-safe
-    h_flat = reshape(h, n, H)
+    T = float(typeof(one(eltype(f)) * one(eltype(h))))
 
-    cdc = zeros(eltype(float(one(eltype(f_flat)) * one(eltype(h_flat)))), n, F, H)
-    diff_f = Matrix{Float64}(undef, k, F)
-    diff_h = Matrix{Float64}(undef, k, H)
-    wdiff_h = similar(diff_h)
+    # The per-point work runs in a point-last layout: one point's values are
+    # contiguous, so the neighbour gather is a column copy rather than an
+    # F-strided walk over an (n, F) array, and the rank-k update accumulates into
+    # a dense H×F buffer instead of the strided `out[p, :, :]` view a point-first
+    # layout would force. Only that buffer is scattered back into the (n, F, H)
+    # result — its stride is n, but consecutive points land on the same cache
+    # lines, so the scatter streams.
+    ft = _point_last(f, n, F, T)                  # (F, n)
+    ht = f === h ? ft : _point_last(h, n, H, T)   # (H, n)
 
-    @inbounds for p in 1:n
+    out = Array{T}(undef, n, F, H)                # every entry is written below
+
+    # Points are independent, so the loop splits into one task per chunk, each
+    # with its own scratch. Single-threaded this is the plain loop plus one task.
+    shared = f === h
+    chunks = _point_chunks(n, F * H * k)
+    if length(chunks) == 1
+        _cdc_knn_chunk!(out, 1:n, ft, ht, shared, diffusion_kernel, nbr_indices,
+                        bandwidths, use_mean_centres, F, H, k, T)
+    else
+        @sync for chunk in chunks
+            Threads.@spawn _cdc_knn_chunk!(out, chunk, ft, ht, shared, diffusion_kernel,
+                                           nbr_indices, bandwidths, use_mean_centres,
+                                           F, H, k, T)
+        end
+    end
+
+    # 1/2ρ, applied in one pass. Kept out of the per-point loop because here the
+    # divisor varies along the contiguous axis, so the whole sweep vectorises.
+    scale = bandwidths === nothing ? 2.0 : reshape(2 .* bandwidths, n, 1, 1)
+    out ./= scale
+    return reshape(out, (n, f_tail..., h_tail...))
+end
+
+# Contiguous, roughly equal point ranges. Chunking by thread rather than by point
+# keeps scratch allocation and task overhead O(nthreads). `work_per_point` is the
+# rank-k update's flop count: small tensors (a scalar Γ, say) do too little per
+# point to pay for a spawn, and splitting them costs more than it saves, so they
+# fall back to a single in-line chunk.
+const _MIN_WORK_PER_TASK = 1 << 20
+
+function _point_chunks(n::Integer, work_per_point::Integer)
+    nt = min(Threads.nthreads(), n, max(1, (n * work_per_point) ÷ _MIN_WORK_PER_TASK))
+    nt <= 1 && return (1:n,)
+    return [round(Int, (t - 1) * n / nt) + 1 : round(Int, t * n / nt) for t in 1:nt]
+end
+
+function _cdc_knn_chunk!(out::Array{T,3}, points, ft, ht, shared::Bool, diffusion_kernel,
+                         nbr_indices, bandwidths, use_mean_centres::Bool,
+                         F::Int, H::Int, k::Int, ::Type{T}) where {T}
+    diff_f = Matrix{T}(undef, F, k)
+    diff_h = shared ? diff_f : Matrix{T}(undef, H, k)
+    wdiff_h = Matrix{T}(undef, H, k)
+    block = Matrix{T}(undef, H, F)
+    means_f = Vector{T}(undef, F)
+    means_h = shared ? means_f : Vector{T}(undef, H)
+
+    @inbounds for p in points
         w = view(diffusion_kernel, p, :)
         nbrs = view(nbr_indices, p, :)
-        # neighbour values
-        for a in 1:F, j in 1:k
-            diff_f[j, a] = f_flat[nbrs[j], a]
-        end
-        for b in 1:H, j in 1:k
-            diff_h[j, b] = h_flat[nbrs[j], b]
-        end
+        _gather!(diff_f, ft, nbrs, F, k)
+        shared || _gather!(diff_h, ht, nbrs, H, k)
         if use_mean_centres
-            for a in 1:F
-                m = 0.0
-                for j in 1:k; m += w[j] * diff_f[j, a]; end
-                for j in 1:k; diff_f[j, a] -= m; end
-            end
-            for b in 1:H
-                m = 0.0
-                for j in 1:k; m += w[j] * diff_h[j, b]; end
-                for j in 1:k; diff_h[j, b] -= m; end
-            end
+            _centre_mean!(diff_f, means_f, w, F, k)
+            shared || _centre_mean!(diff_h, means_h, w, H, k)
         else
-            for a in 1:F, j in 1:k; diff_f[j, a] -= f_flat[p, a]; end
-            for b in 1:H, j in 1:k; diff_h[j, b] -= h_flat[p, b]; end
+            _centre_point!(diff_f, ft, p, F, k)
+            shared || _centre_point!(diff_h, ht, p, H, k)
         end
-        # cdc[p] = diff_fᵀ diag(w) diff_h
-        for b in 1:H, j in 1:k; wdiff_h[j, b] = w[j] * diff_h[j, b]; end
-        @views mul!(cdc[p, :, :], transpose(diff_f), wdiff_h)
+        # blockᵀ = diff_h diag(w) diff_fᵀ; the 1/2ρ scaling comes after the loop
+        for j in 1:k
+            wj = w[j]
+            for b in 1:H; wdiff_h[b, j] = wj * diff_h[b, j]; end
+        end
+        _rank_k!(block, diff_f, wdiff_h, F, H, k)
+        for b in 1:H, a in 1:F
+            out[p, a, b] = block[b, a]
+        end
     end
+    return out
+end
 
-    scale = bandwidths === nothing ? fill(2.0, n) : 2 .* bandwidths
-    @inbounds for p in 1:n
-        cdc[p, :, :] ./= scale[p]
+# (n, tail...) → a dense (prod(tail), n) working copy.
+function _point_last(x::AbstractArray, n::Integer, M::Integer, ::Type{T}) where {T}
+    xt = Matrix{T}(undef, M, n)
+    xf = reshape(x, n, M)
+    @inbounds for a in 1:M, p in 1:n
+        xt[a, p] = xf[p, a]
     end
-    return reshape(cdc, (n, f_tail..., h_tail...))
+    return xt
+end
+
+@inline function _gather!(dst, src, nbrs, M, k)
+    @inbounds for j in 1:k
+        q = nbrs[j]
+        for a in 1:M; dst[a, j] = src[a, q]; end
+    end
+end
+
+# Subtract each row's kernel-weighted mean over the neighbourhood.
+#
+# `diff` is M×k, so the two axes want opposite loop orders and which one wins
+# depends on the tensor. For a wide tensor the sweep runs with j outermost, which
+# walks `diff` contiguously and vectorises over M. For a narrow one the whole M×k
+# block is L1-resident anyway, so striding is free and it is cheaper to reduce
+# each row into a scalar in two passes than to make three passes over M-vectors.
+const _CENTRE_WIDE_M = 16
+
+@inline function _centre_mean!(diff, means, w, M, k)
+    @inbounds if M >= _CENTRE_WIDE_M
+        @simd for a in 1:M; means[a] = zero(eltype(means)); end
+        for j in 1:k
+            wj = w[j]
+            @simd for a in 1:M
+                means[a] = muladd(wj, diff[a, j], means[a])
+            end
+        end
+        for j in 1:k
+            @simd for a in 1:M
+                diff[a, j] -= means[a]
+            end
+        end
+    else
+        for a in 1:M
+            m = zero(eltype(diff))
+            for j in 1:k; m = muladd(w[j], diff[a, j], m); end
+            for j in 1:k; diff[a, j] -= m; end
+        end
+    end
+end
+
+# blockᵀ = B Aᵀ (an H×F result) for the tall-thin A (F×k), B (H×k) of one
+# neighbourhood. Below `_GEMM_MIN_WORK` a `mul!` would spend more time in BLAS
+# call overhead than in arithmetic — and it is paid once per point — so small
+# blocks accumulate rank-1 over j instead. Writing the transposed result puts the
+# vectorised axis on H, which is the longer of the two for every tensor space here.
+const _GEMM_MIN_WORK = 1 << 11
+
+@inline function _rank_k!(blockT, A, B, F, H, k)
+    if F * H * k >= _GEMM_MIN_WORK
+        mul!(blockT, B, transpose(A))
+        return
+    end
+    @inbounds begin
+        for a in 1:F, b in 1:H; blockT[b, a] = zero(eltype(blockT)); end
+        for j in 1:k, a in 1:F
+            t = A[a, j]
+            @simd for b in 1:H
+                blockT[b, a] = muladd(B[b, j], t, blockT[b, a])
+            end
+        end
+    end
+end
+
+# Subtract the value at the centre point itself.
+@inline function _centre_point!(diff, src, p, M, k)
+    @inbounds for j in 1:k, a in 1:M
+        diff[a, j] -= src[a, p]
+    end
 end
 
 """

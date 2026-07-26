@@ -124,17 +124,30 @@ function tune_kernel(kernel_entries::AbstractMatrix, epsilons::AbstractVector)
     ne = length(epsilons)
     nk = length(kernel_entries)
     avg = Vector{Float64}(undef, ne)
-    @inbounds for e in 1:ne
-        inv_eps = 1.0 / epsilons[e]
-        s = 0.0
-        for v in kernel_entries
-            s += exp(-v * inv_eps)
-        end
-        avg[e] = s / nk
+    entries = vec(kernel_entries)
+    # The sweep is `length(epsilons) * length(kernel_entries)` exp calls and is the
+    # bulk of `markov_chain`. Each ε is an independent reduction, so the sweep
+    # threads cleanly; the result does not depend on how it is split.
+    Threads.@threads for e in 1:ne
+        avg[e] = _kernel_sum(entries, epsilons[e]) / nk
     end
     criterion = diff(log.(avg)) ./ diff(log.(epsilons))
     m = argmax(criterion)                          # first max, matches np.argmax
     return epsilons[m], 2 * criterion[m]
+end
+
+# Σ exp(-v/ε). `exp(-x)` is exactly 0.0 once x passes 1075·log 2 ≈ 745.1, and
+# adding an exact zero cannot change the running sum, so skipping those terms is
+# bit-identical to summing all of them. It only bites at the small-ε end of the
+# sweep — a few percent of the total — but it costs a compare against an exp.
+function _kernel_sum(entries::AbstractVector{<:Real}, epsilon::Real)
+    inv_eps = 1.0 / epsilon
+    cutoff = 746.0 * epsilon
+    s = 0.0
+    @inbounds for v in entries
+        v < cutoff && (s += exp(-v * inv_eps))
+    end
+    return s
 end
 
 """
@@ -182,10 +195,11 @@ function markov_chain(nbr_distances::AbstractMatrix, nbr_indices::AbstractMatrix
     @assert size(nbr_indices) == (n, knn_kernel)
 
     epsilons = 2 .^ collect(-10:0.25:9.75)
+    sq_distances = nbr_distances .^ 2                                             # used twice
 
     # 1. Kernel density estimate q0 with density kernel bandwidths ρ_A.
     bandwidths_A = compute_local_bandwidths(nbr_distances, knn_bandwidth, "l2")   # (n,)
-    kernel_entries_A = nbr_distances .^ 2 ./ (bandwidths_A[nbr_indices] .* bandwidths_A)
+    kernel_entries_A = sq_distances ./ (bandwidths_A[nbr_indices] .* bandwidths_A)
     epsilon_A, dim_A = tune_kernel(kernel_entries_A, epsilons)
     kernel_A = exp.(-kernel_entries_A ./ epsilon_A) ./ ((π * epsilon_A) ^ (dim_A / 2))
     density_estimate_A = vec(sum(kernel_A, dims=2)) ./ (n .* bandwidths_A .^ dim_A)   # (n,)
@@ -193,7 +207,7 @@ function markov_chain(nbr_distances::AbstractMatrix, nbr_indices::AbstractMatrix
     # 2. Kernel K with bandwidths ρ_B derived from q0.
     bandwidths_B = density_estimate_A .^ bandwidth_variability                    # (n,)
     bandwidths_B ./= median(bandwidths_B)
-    kernel_entries_B = nbr_distances .^ 2 ./ (bandwidths_B[nbr_indices] .* bandwidths_B)
+    kernel_entries_B = sq_distances ./ (bandwidths_B[nbr_indices] .* bandwidths_B)
     epsilon_B, dim_B = tune_kernel(kernel_entries_B, epsilons)
     kernel_B = exp.(-kernel_entries_B ./ epsilon_B)
     density_estimate_B = vec(sum(kernel_B, dims=2)) ./ (bandwidths_B .^ dim_B)     # (n,)

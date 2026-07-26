@@ -11,7 +11,7 @@ Where a bug has a numerical parity target, the Julia port implements the *correc
 behaviour and `pyparity/gen_fixtures.py` stores a **corrected** reference, so the
 parity gate compares against the right answer rather than pinning the bug. Each
 correction is guarded: if upstream fixes the bug, fixture generation fails loudly
-rather than silently double-correcting. See `PORTING_PLAN.md` §8. A test defect has
+rather than silently double-correcting. A test defect has
 no parity target and so no such guard — §5 is a coverage hole, closed on the Julia
 side only.
 
