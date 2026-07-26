@@ -4,7 +4,9 @@ Julia port of the Python `DiffusionGeometry` package — data-driven calculus,
 geometry, and topology on point clouds via heat diffusion and the carré du champ
 operator.
 
-See `PORTING_PLAN.md` for scope and the phased plan.
+The port is complete; development now diverges from upstream. See `README.md` for
+scope and `docs/src/upstream-bugs.md` for where the Julia behaviour deliberately
+differs from the Python.
 
 ## Agent skills
 
