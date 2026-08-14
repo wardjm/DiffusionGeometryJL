@@ -1,4 +1,4 @@
-# DiffusionGeometryJ
+# DiffusionGeometryJL
 
 Data-driven calculus, geometry, and topology on point clouds — via heat
 diffusion and the carré du champ operator.
@@ -20,7 +20,7 @@ cite the original authors when using this software:
 
 ## What it does
 
-Given nothing but a point cloud, `DiffusionGeometryJ` builds a discrete
+Given nothing but a point cloud, `DiffusionGeometryJL` builds a discrete
 approximation of the manifold the points are sampled from and lets you do
 differential geometry on it: take gradients and Hessians, build the exact and
 Hodge Laplacians on differential forms, measure lengths and angles with the
@@ -32,7 +32,7 @@ the heat diffusion of the data — no mesh, no charts, no prescribed metric.
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/wardjm/DiffusionGeometryJ")
+Pkg.add(url="https://github.com/wardjm/DiffusionGeometryJL")
 ```
 
 Plotting is provided through a package extension that loads only when a
@@ -45,7 +45,7 @@ Pkg.add("GLMakie")   # or CairoMakie
 ## Quick start
 
 ```julia
-using DiffusionGeometryJ
+using DiffusionGeometryJL
 
 # a point cloud: n points in d ambient dimensions (n × d)
 data = randn(200, 3)

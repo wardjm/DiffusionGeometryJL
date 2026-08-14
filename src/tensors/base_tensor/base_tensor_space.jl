@@ -123,10 +123,10 @@ gram(space::AbstractTensorSpace) = gram(_u_coeffs(space.dg), cdc_components(spac
 
 # Examples
 ```jldoctest
-julia> DiffusionGeometryJ._is_orthonormal(function_space(dg))
+julia> DiffusionGeometryJL._is_orthonormal(function_space(dg))
 true
 
-julia> DiffusionGeometryJ._is_orthonormal(vector_field_space(dg))
+julia> DiffusionGeometryJL._is_orthonormal(vector_field_space(dg))
 false
 ```
 """
@@ -149,7 +149,7 @@ but the weakest are two orders of magnitude down on the rest. Those are the ambi
 directions *normal* to the circle, which the metric barely sees:
 
 ```jldoctest
-julia> vals, vecs = DiffusionGeometryJ._gram_spectrum(vector_field_space(dg));
+julia> vals, vecs = DiffusionGeometryJL._gram_spectrum(vector_field_space(dg));
 
 julia> length(vals)
 16

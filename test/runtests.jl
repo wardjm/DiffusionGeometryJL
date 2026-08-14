@@ -1,11 +1,11 @@
 using Test
 using LinearAlgebra
-using DiffusionGeometryJ
+using DiffusionGeometryJL
 
 include("parity.jl")
 include("pysuite.jl")
 
-@testset "DiffusionGeometryJ" begin
+@testset "DiffusionGeometryJL" begin
     include("test_basis_utils.jl")
     include("test_regularise.jl")
     include("test_diffusion_core.jl")

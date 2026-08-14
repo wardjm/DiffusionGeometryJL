@@ -6,13 +6,13 @@
 
 using CairoMakie
 using CairoMakie: Makie
-using DiffusionGeometryJ: batch_shape, full_tensor
+using DiffusionGeometryJL: batch_shape, full_tensor
 using LinearAlgebra: norm, eigen, Symmetric
 using Random: MersenneTwister
 
 # Loading CairoMakie triggers the package extension; reach into it for the recipe
 # plot types and internal helpers the structural tests assert against.
-const Ext = Base.get_extension(DiffusionGeometryJ, :DiffusionGeometryJMakieExt)
+const Ext = Base.get_extension(DiffusionGeometryJL, :DiffusionGeometryJLMakieExt)
 @assert Ext !== nothing "Makie extension failed to load"
 
 # ── Fixtures: a 2D disc and a 3D torus, each with a diffusion geometry ─────────

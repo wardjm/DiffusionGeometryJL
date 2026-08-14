@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = DiffusionGeometryJ
+CurrentModule = DiffusionGeometryJL
 ```
 
 # Diffusion core

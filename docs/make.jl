@@ -1,19 +1,19 @@
 using Documenter
-using DiffusionGeometryJ
+using DiffusionGeometryJL
 
 include(joinpath(@__DIR__, "doctest_setup.jl"))
-DocMeta.setdocmeta!(DiffusionGeometryJ, :DocTestSetup, DOCTEST_SETUP; recursive=true)
+DocMeta.setdocmeta!(DiffusionGeometryJL, :DocTestSetup, DOCTEST_SETUP; recursive=true)
 
 makedocs(;
-    sitename="DiffusionGeometryJ",
+    sitename="DiffusionGeometryJL",
     authors="Jeffrey Ward",
-    modules=[DiffusionGeometryJ],
+    modules=[DiffusionGeometryJL],
     doctest=true,
     checkdocs=:exports,          # every exported name must appear in an @docs block
     # No `warnonly`: an undocumented export, a broken doctest or a dead cross-reference
     # must fail the build, not warn.
     format=Documenter.HTML(;
-        canonical="https://wardjm.github.io/DiffusionGeometryJ",
+        canonical="https://wardjm.github.io/DiffusionGeometryJL",
         prettyurls=get(ENV, "CI", "false") == "true",
     ),
     pages=[
@@ -32,4 +32,4 @@ makedocs(;
     ],
 )
 
-deploydocs(; repo="github.com/wardjm/DiffusionGeometryJ", devbranch="main")
+deploydocs(; repo="github.com/wardjm/DiffusionGeometryJL", devbranch="main")

@@ -1,4 +1,4 @@
-# Makie plotting for DiffusionGeometryJ.
+# Makie plotting for DiffusionGeometryJL.
 #
 # Loaded automatically once the user loads Makie (via GLMakie, CairoMakie, …).
 # Replaces the Python `diffusion_geometry/visualisation.py` and
@@ -7,7 +7,7 @@
 # The plotting functions themselves are declared in `src/visualisation/api.jl`; the
 # `@recipe` calls below add methods to *those* functions (the macro escapes the
 # function name, so it extends the imported binding rather than shadowing it), which
-# is what lets `DiffusionGeometryJ` export names an extension implements.
+# is what lets `DiffusionGeometryJL` export names an extension implements.
 #
 # Three pieces of `visualisation.py` are deliberately not ported:
 #
@@ -23,7 +23,7 @@
 # and locks the aspect ratio of the axis it creates. `LScene` draws a 3D axis by default,
 # so this is not something Makie gives for free.
 
-module DiffusionGeometryJMakieExt
+module DiffusionGeometryJLMakieExt
 
 using Makie
 using Makie: Point, Point2f, Point3f, Vec, Vec3f, lift, to_value
@@ -33,13 +33,13 @@ using Statistics: median, mean
 
 const GeometryBasics = Makie.GeometryBasics
 
-using DiffusionGeometryJ:
+using DiffusionGeometryJL:
     AbstractTensor, ScalarFunction, VectorField, Form, Tensor02, Tensor02Sym,
     DIVERGING_COLORMAP, CYCLIC_COLORMAP,
     ambient_dim, batch_shape, degree, full_tensor, geometry, hodge_star_2_form,
     immersion_coords, to_ambient, to_pointwise_basis
 
-import DiffusionGeometryJ:
+import DiffusionGeometryJL:
     dgplot, dgplot!, dgscatter, dgscatter!, dgquiver, dgquiver!,
     dg2form, dg2form!, dg3form, dg3form!, dgellipsoids, dgellipsoids!,
     dgeiglines, dgeiglines!, dgtangentplanes, dgtangentplanes!, dganimate

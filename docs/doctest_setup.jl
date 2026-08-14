@@ -7,12 +7,12 @@
 # hard to read. It is documented for the reader in `docs/src/index.md`.
 
 const DOCTEST_SETUP = quote
-    using DiffusionGeometryJ
+    using DiffusionGeometryJL
     using LinearAlgebra
 
     # Nothing unexported is imported here on purpose. The internal helpers documented on
     # the "Utilities" page (`np_reshape`, the batch helpers, `_from_pointwise_basis`) are
-    # *not* exported, so their examples spell them `DiffusionGeometryJ.np_reshape(...)` —
+    # *not* exported, so their examples spell them `DiffusionGeometryJL.np_reshape(...)` —
     # as a reader would have to.
 
     # 60 points on the unit circle in ℝ² — the running example. Its intrinsic

@@ -18,7 +18,7 @@ using Statistics: mean, median, cor
     aeq(a, b; rtol=1e-8, atol=1e-10) = isapprox(a, b; rtol=rtol, atol=atol)
 
     "Pointwise data of an unbatched tensor as an `(n, C)` matrix (C-order, as Python)."
-    pointwise(t, n, c) = DiffusionGeometryJ.np_reshape(vec(to_pointwise_basis(t)), n, c)
+    pointwise(t, n, c) = DiffusionGeometryJL.np_reshape(vec(to_pointwise_basis(t)), n, c)
 
     @testset "manifold_diffusion_geometry_intro: torus scalar curvature" begin
         fx = load_fixture("notebook_curvature")
