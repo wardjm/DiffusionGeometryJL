@@ -7,7 +7,7 @@ functions exist but have no methods, and calling one prints a hint telling you t
 load a backend.
 
 ```julia
-using DiffusionGeometryJ
+using DiffusionGeometryJL
 using GLMakie          # interactive; or CairoMakie for vector (PDF/SVG/PNG) output
 
 dg = from_point_cloud(points)
@@ -111,7 +111,7 @@ deliberately absent:
 ## API
 
 ```@meta
-CurrentModule = DiffusionGeometryJ
+CurrentModule = DiffusionGeometryJL
 ```
 
 The plot functions have no methods until a Makie backend is loaded, so their examples

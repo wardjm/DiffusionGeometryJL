@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
-# Timing benchmark for the Julia DiffusionGeometryJ tracer-bullet pipeline.
-using DiffusionGeometryJ
+# Timing benchmark for the Julia DiffusionGeometryJL tracer-bullet pipeline.
+using DiffusionGeometryJL
 using Random, Statistics, Printf
 
 const SIZES = [200, 500, 1000, 2000, 3000, 5000]

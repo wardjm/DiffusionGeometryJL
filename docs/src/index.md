@@ -1,9 +1,9 @@
 ```@meta
-CurrentModule = DiffusionGeometryJ
+CurrentModule = DiffusionGeometryJL
 DocTestSetup = Main.DOCTEST_SETUP
 ```
 
-# DiffusionGeometryJ
+# DiffusionGeometryJL
 
 Data-driven calculus, geometry, and topology on point clouds — via heat diffusion
 and the carré du champ operator.
@@ -25,7 +25,7 @@ No mesh, no charts, no prescribed metric.
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/wardjm/DiffusionGeometryJ")
+Pkg.add(url="https://github.com/wardjm/DiffusionGeometryJL")
 ```
 
 Plotting comes from a package extension that loads when a

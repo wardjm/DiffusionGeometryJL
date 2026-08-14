@@ -16,7 +16,7 @@
 using Combinatorics: combinations
 # `coeffs` and `np_reshape` are internal; the tests need them to poke at the
 # coefficient layout, which flattens C-order like numpy.
-using DiffusionGeometryJ: coeffs, np_reshape
+using DiffusionGeometryJL: coeffs, np_reshape
 
 # ── test_cache_properties.py ──────────────────────────────────────────────────
 @testset "cache_properties" begin

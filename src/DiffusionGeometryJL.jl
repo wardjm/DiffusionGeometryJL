@@ -1,4 +1,4 @@
-module DiffusionGeometryJ
+module DiffusionGeometryJL
 
 # ── Phase 1: combinatorics + utils ────────────────────────────────────────────
 include("utils/basis_utils.jl")

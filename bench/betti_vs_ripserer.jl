@@ -1,4 +1,4 @@
-# Compare DiffusionGeometryJ's `betti_numbers` against persistent homology
+# Compare DiffusionGeometryJL's `betti_numbers` against persistent homology
 # (Ripserer) on a few point clouds with known topology.
 #
 # Ripserer is NOT a dependency of this package. Run this in a scratch env:
@@ -17,7 +17,7 @@
 # NOTE: `betti_numbers` needs the FULL coefficient basis
 # (n_coefficients == n_function_basis) or the harmonic forms are truncated away.
 
-using DiffusionGeometryJ
+using DiffusionGeometryJL
 using Ripserer
 using Random
 

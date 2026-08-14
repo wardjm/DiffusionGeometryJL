@@ -5,7 +5,7 @@
 # contract. Higher Betti numbers are a spectral-gap heuristic (see the caveats in
 # src/methods/topology.jl) and are not asserted for their topological value here.
 
-using DiffusionGeometryJ
+using DiffusionGeometryJL
 using Random: MersenneTwister
 
 # Build a geometry with the FULL coefficient basis — betti detection needs it.

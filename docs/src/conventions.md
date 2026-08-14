@@ -1,5 +1,5 @@
 ```@meta
-CurrentModule = DiffusionGeometryJ
+CurrentModule = DiffusionGeometryJL
 DocTestSetup = Main.DOCTEST_SETUP
 ```
 
@@ -41,7 +41,7 @@ carries its own [`broadcast_batch_shape`](@ref).
 julia> batch_shape(dg_function(dg, ones(3, 60)))     # three functions in one tensor
 (3,)
 
-julia> DiffusionGeometryJ.broadcast_batch_shape((3, 4), (4,))           # right-aligned
+julia> DiffusionGeometryJL.broadcast_batch_shape((3, 4), (4,))           # right-aligned
 (3, 4)
 ```
 

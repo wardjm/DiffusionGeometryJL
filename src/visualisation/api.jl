@@ -1,6 +1,6 @@
 # Public plotting API.
 #
-# The implementations live in `ext/DiffusionGeometryJMakieExt.jl`, a package
+# The implementations live in `ext/DiffusionGeometryJLMakieExt.jl`, a package
 # extension that loads only once the user has loaded Makie (via a backend such as
 # GLMakie or CairoMakie). The names are declared here so they are exported and
 # documented from the package proper, and so `@recipe` in the extension adds
@@ -47,7 +47,7 @@ are forwarded to the underlying recipe — see [`dgscatter`](@ref), [`dgquiver`]
 
 # Examples
 ```julia
-using GLMakie, DiffusionGeometryJ
+using GLMakie, DiffusionGeometryJL
 
 θ = range(0, 2π; length=61)[1:60]
 dg = from_point_cloud([cos.(θ) sin.(θ)]; knn_kernel=16, n_function_basis=8)
@@ -177,7 +177,7 @@ being renormalised each frame. Replaces the Python `methods/pde.py::gif_from_fun
 
 # Examples
 ```julia
-using GLMakie, DiffusionGeometryJ
+using GLMakie, DiffusionGeometryJL
 
 u = solve_differential_operator(-laplacian(dg, 0), f, range(0, 2; length=60))
 dganimate(u, "heat.mp4"; framerate=30)

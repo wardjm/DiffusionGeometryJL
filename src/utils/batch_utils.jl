@@ -16,16 +16,16 @@ function rather than a delegation. Throws `DimensionMismatch` if the shapes conf
 
 # Examples
 ```jldoctest
-julia> DiffusionGeometryJ.broadcast_batch_shape((3, 4), (4,))       # right-aligned: (4,) fills the last axis
+julia> DiffusionGeometryJL.broadcast_batch_shape((3, 4), (4,))       # right-aligned: (4,) fills the last axis
 (3, 4)
 
-julia> DiffusionGeometryJ.broadcast_batch_shape((3, 1), (1, 4))     # length-1 axes stretch
+julia> DiffusionGeometryJL.broadcast_batch_shape((3, 1), (1, 4))     # length-1 axes stretch
 (3, 4)
 
-julia> DiffusionGeometryJ.broadcast_batch_shape((), (5,))           # an unbatched tensor joins any batch
+julia> DiffusionGeometryJL.broadcast_batch_shape((), (5,))           # an unbatched tensor joins any batch
 (5,)
 
-julia> DiffusionGeometryJ.broadcast_batch_shape((3,), (4,))
+julia> DiffusionGeometryJL.broadcast_batch_shape((3,), (4,))
 ERROR: DimensionMismatch: Incompatible batch shapes: ((3,), (4,))
 ```
 """
@@ -83,10 +83,10 @@ axes it already has. Julia's own broadcasting then reproduces numpy's semantics:
 
 # Examples
 ```jldoctest
-julia> size(DiffusionGeometryJ.pad_batch_dims(zeros(4, 6), 2))         # batch (4,), coeff axis 6
+julia> size(DiffusionGeometryJL.pad_batch_dims(zeros(4, 6), 2))         # batch (4,), coeff axis 6
 (1, 4, 6)
 
-julia> size(DiffusionGeometryJ.pad_batch_dims(zeros(4, 6), 1))         # already rank 1: untouched
+julia> size(DiffusionGeometryJL.pad_batch_dims(zeros(4, 6), 1))         # already rank 1: untouched
 (4, 6)
 ```
 """
@@ -106,7 +106,7 @@ rule. Both arrays keep their `ntail` trailing (non-batch) axes.
 
 # Examples
 ```jldoctest
-julia> a, b = DiffusionGeometryJ.align_batch_pair(zeros(3, 4, 6), zeros(4, 6));
+julia> a, b = DiffusionGeometryJL.align_batch_pair(zeros(3, 4, 6), zeros(4, 6));
 
 julia> size(a), size(b)                # b gained a leading singleton axis
 ((3, 4, 6), (1, 4, 6))
@@ -129,12 +129,12 @@ einsum; prefer [`pad_batch_dims`](@ref) when plain broadcasting will do.
 
 # Examples
 ```jldoctest
-julia> size(DiffusionGeometryJ.broadcast_batch_to(ones(4, 6), (3, 4)))     # copied along the new axis
+julia> size(DiffusionGeometryJL.broadcast_batch_to(ones(4, 6), (3, 4)))     # copied along the new axis
 (3, 4, 6)
 
 julia> A = ones(4, 6);
 
-julia> DiffusionGeometryJ.broadcast_batch_to(A, (4,)) === A                # already the target: no copy
+julia> DiffusionGeometryJL.broadcast_batch_to(A, (4,)) === A                # already the target: no copy
 true
 ```
 """
@@ -155,7 +155,7 @@ axis, giving `(prod(target), tail...)` — the layout the einsum kernels want.
 
 # Examples
 ```jldoctest
-julia> size(DiffusionGeometryJ.broadcast_flatten_batch(ones(4, 6), (3, 4)))    # batch (3, 4) → 12 rows
+julia> size(DiffusionGeometryJL.broadcast_flatten_batch(ones(4, 6), (3, 4)))    # batch (3, 4) → 12 rows
 (12, 6)
 ```
 """
@@ -174,12 +174,12 @@ return the array together with its leading batch shape. This is the check every
 
 # Examples
 ```jldoctest
-julia> _, batch = DiffusionGeometryJ.infer_batch_shape(zeros(3, 5, 16), (16,));
+julia> _, batch = DiffusionGeometryJL.infer_batch_shape(zeros(3, 5, 16), (16,));
 
 julia> batch
 (3, 5)
 
-julia> DiffusionGeometryJ.infer_batch_shape(zeros(3, 15), (16,); name="VectorField")
+julia> DiffusionGeometryJL.infer_batch_shape(zeros(3, 15), (16,); name="VectorField")
 ERROR: AssertionError: VectorField coefficients must have trailing shape (16,), got (3, 15)
 ```
 """
@@ -201,12 +201,12 @@ Undone by [`restore_batch_dims`](@ref).
 
 # Examples
 ```jldoctest
-julia> flat, batch = DiffusionGeometryJ.flatten_batch_dims(zeros(2, 3, 16));
+julia> flat, batch = DiffusionGeometryJL.flatten_batch_dims(zeros(2, 3, 16));
 
 julia> size(flat), batch
 ((6, 16), (2, 3))
 
-julia> flat, batch = DiffusionGeometryJ.flatten_batch_dims(zeros(16));    # unbatched: one row, empty batch
+julia> flat, batch = DiffusionGeometryJL.flatten_batch_dims(zeros(16));    # unbatched: one row, empty batch
 
 julia> size(flat), batch
 ((1, 16), ())
@@ -230,12 +230,12 @@ Inverse of [`flatten_batch_dims`](@ref): reshape a `(prod(batch), L)` matrix bac
 ```jldoctest
 julia> A = reshape(1.0:96.0, 2, 3, 16);
 
-julia> flat, batch = DiffusionGeometryJ.flatten_batch_dims(A);
+julia> flat, batch = DiffusionGeometryJL.flatten_batch_dims(A);
 
-julia> DiffusionGeometryJ.restore_batch_dims(flat, batch) == A            # a round trip
+julia> DiffusionGeometryJL.restore_batch_dims(flat, batch) == A            # a round trip
 true
 
-julia> size(DiffusionGeometryJ.restore_batch_dims(zeros(1, 16), ()))      # empty batch → a plain vector
+julia> size(DiffusionGeometryJL.restore_batch_dims(zeros(1, 16), ()))      # empty batch → a plain vector
 (16,)
 ```
 """

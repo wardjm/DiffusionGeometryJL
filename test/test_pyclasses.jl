@@ -12,7 +12,7 @@
 using Combinatorics: combinations
 using OMEinsum: @ein_str
 # Internal accessors the tests need: none of these are exported.
-using DiffusionGeometryJ: coeffs, space, geometry, batch_shape, np_reshape,
+using DiffusionGeometryJL: coeffs, space, geometry, batch_shape, np_reshape,
                           _spectral_decomposition, regularise_fn
 using SparseArrays: sparse, findnz
 

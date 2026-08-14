@@ -10,11 +10,11 @@
 using Documenter
 
 include(joinpath(@__DIR__, "..", "docs", "doctest_setup.jl"))
-DocMeta.setdocmeta!(DiffusionGeometryJ, :DocTestSetup, DOCTEST_SETUP; recursive=true)
+DocMeta.setdocmeta!(DiffusionGeometryJL, :DocTestSetup, DOCTEST_SETUP; recursive=true)
 
 @testset "doctests" begin
     # `manual=true` also runs the `jldoctest` blocks in the manual pages under
     # `docs/src`, so the examples in the guide are held to the suite too, not just
     # the ones in docstrings.
-    doctest(DiffusionGeometryJ; manual=true)
+    doctest(DiffusionGeometryJL; manual=true)
 end

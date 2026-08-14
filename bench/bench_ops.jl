@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 # Timing benchmark for the Julia operator-build path (weak-matrix contractions).
-using DiffusionGeometryJ
+using DiffusionGeometryJL
 using Random, Statistics, Printf
 
 const SIZES = [500, 1000, 2000, 3000, 5000]

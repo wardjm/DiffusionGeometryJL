@@ -1,4 +1,4 @@
-# DiffusionGeometryJ
+# DiffusionGeometryJL
 
 Julia port of the Python `DiffusionGeometry` package — data-driven calculus,
 geometry, and topology on point clouds via heat diffusion and the carré du champ
