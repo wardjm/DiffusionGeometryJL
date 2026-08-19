@@ -1,7 +1,7 @@
 # Bugs found in the upstream Python `DiffusionGeometry`
 
-Defects discovered in the reference implementation while porting it to Julia — and,
-in §5, in its *test suite*, where the shipped code is right but nothing checks it.
+Defects discovered in the reference implementation while porting it to Julia, and in
+§5 in its *test suite*, where the shipped code is right but nothing checks it.
 
 - **Upstream:** https://github.com/Iolo-Jones/DiffusionGeometry
 - **Revision audited:** `f45b39f` ("update mdg notebook"), clean tree.
@@ -12,7 +12,7 @@ behaviour and `pyparity/gen_fixtures.py` stores a **corrected** reference, so th
 parity gate compares against the right answer rather than pinning the bug. Each
 correction is guarded: if upstream fixes the bug, fixture generation fails loudly
 rather than silently double-correcting. A test defect has
-no parity target and so no such guard — §5 is a coverage hole, closed on the Julia
+no parity target and so no such guard: §5 is a coverage hole, closed on the Julia
 side only.
 
 | # | Location | Severity | Status in the port |
@@ -56,7 +56,7 @@ sign_buggy(σ) = (-1)^(k(k-1)/2) · sign_true(σ)
 ```
 
 This is a *global* factor, identical for every `σ`, so nothing internally
-inconsistent ever shows up — the antisymmetry of the result is preserved. The
+inconsistent ever shows up, and the antisymmetry of the result is preserved. The
 symptom is simply that the identity permutation is assigned `-1`:
 
 ```python
@@ -121,10 +121,10 @@ The only caller is `DiffusionGeometry.vector_field(X_data, mode="reconstruct")`
 (`core/geometry/diffusion_geometry.py:922`), so that entire mode is unusable. The
 default `mode="pullback"` path works fine.
 
-**Fix.** The missing map is not arbitrary — it is the Jacobian of `to_ambient` for a
-vector field, which is linear in the coefficients. Since
-`VectorField.to_ambient() == flat().to_ambient()` raises the covariant components
-with the ambient carré du champ, and `_to_pointwise_basis` is just `u @ coeffs`:
+**Fix.** The missing map is the Jacobian of `to_ambient` for a vector field, which is
+linear in the coefficients. Since `VectorField.to_ambient() == flat().to_ambient()`
+raises the covariant components with the ambient carré du champ, and
+`_to_pointwise_basis` is just `u @ coeffs`:
 
 ```
 quiver[p, a] = Σ_i Γ_ambient[p, a, i] · Σ_k u[p, k] · coeffs[k, i]
@@ -151,8 +151,8 @@ which is the defining property of the map. See `test/test_ambient.jl`.
 ## 3. `geodesic_distances_function` reads two attributes off the wrong object
 
 **Where:** `methods/geodesics.py`, lines 45 and 80. Note this file sits at the
-**repository root**, not inside the `diffusion_geometry` package — it is not
-importable as part of the library, `cvxpy` is not among the package's dependencies,
+**repository root**, not inside the `diffusion_geometry` package, so it isn't
+importable as part of the library; `cvxpy` is not among the package's dependencies,
 and the function appears never to have been executed.
 
 **What's wrong.** Both attributes live on `dg.triple`, not on `dg.cache`:
@@ -202,7 +202,7 @@ if k == 0:
 
 The assertion could never hold: for `k = 0` the shape is `(n, 1)`, not `(n,)`.
 
-**Severity: cosmetic.** The branch is unreachable in practice — `dg.form_space(0)`
+**Severity: cosmetic.** The branch is unreachable in practice: `dg.form_space(0)`
 returns a `FunctionSpace`, not a `FormSpace`, so a degree-0 `Form` is never
 constructed, and `Function.to_ambient()` short-circuits to `to_pointwise_basis()`
 without calling this function. The dead branch would only bite someone constructing
@@ -236,14 +236,14 @@ doubles the `j₁ ≠ j₂` entries, and it is right to: the symmetric basis ele
 Hessian against it picks up both entries. The same convention is baked into
 `gamma_02_sym`, whose off-diagonal rows and columns carry the matching ×2. Comparing
 the builder against an expectation that drops the factor fails on exactly the
-off-diagonal rows — so the assertion was commented out rather than the expectation
+off-diagonal rows, so the assertion was commented out rather than the expectation
 fixed, and `hessian_02_sym_weak` was left with no value check on either side of the
 port.
 
 **Severity: test defect.** The shipped builder is correct; the coverage was not. But
-it was the *only* weak-operator builder whose values nothing verified — the fixture
-parity gate compares Julia against Python's output, which proves nothing if Python is
-wrong.
+it was the *only* weak-operator builder whose values nothing verified, and the
+fixture parity gate compares Julia against Python's output, which proves nothing if
+Python is wrong.
 
 **In the port.** The check is enabled, with the factor restored, in
 `test/test_pysrc.jl` → `hessian` → `hessian_02_sym_weak matrix`, and it passes at

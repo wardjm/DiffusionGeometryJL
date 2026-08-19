@@ -33,8 +33,8 @@ expanded in. Functions always use the full basis, everything else uses
 
 ## Batch axes broadcast from the right (numpy, not Julia)
 
-Any leading axes are batch dimensions. They broadcast numpy-style — matched from the
-right, with length-1 axes stretching — which is *not* Julia's rule, so the package
+Any leading axes are batch dimensions. They broadcast numpy-style: matched from the
+right, with length-1 axes stretching. That is *not* Julia's rule, so the package
 carries its own [`broadcast_batch_shape`](@ref).
 
 ```jldoctest
@@ -46,7 +46,7 @@ julia> DiffusionGeometryJL.broadcast_batch_shape((3, 4), (4,))           # right
 ```
 
 A plain numeric array multiplying a tensor is a bag of *batch-wise scalars*, never a
-coefficient vector — that is what makes `exp.(-evals) .* evecs` a spectral filter.
+coefficient vector, which is what makes `exp.(-evals) .* evecs` a spectral filter.
 `.*` and `./` are exact synonyms for `*` and `/`; no other broadcast is defined.
 
 ## Everything is 1-based, and stored row-major
@@ -56,7 +56,7 @@ the source point of [`geodesic_distances_function`](@ref). The Python reference 
 0-based, so a Python array `v` of indices corresponds to `v .+ 1` here.
 
 Coefficient arrays are flattened **row-major** (C-order, basis index slowest), matching
-numpy and the parity fixtures — hence [`np_reshape`](@ref) rather than `Base.reshape`
+numpy and the parity fixtures, hence [`np_reshape`](@ref) rather than `Base.reshape`
 wherever a multi-index is packed.
 
 ## Weak and strong forms
@@ -76,8 +76,8 @@ true
 The strong form goes through a *pseudo*-inverse with a spectral cutoff (`dg.rcond`), so
 composing operators is not the same computation as assembling the composite directly.
 They agree on everything the basis resolves and drift apart on the modes it barely
-does — `δd` assembled in one weak form is the trustworthy one, which is why
-[`laplacian`](@ref) does not just compose [`codifferential`](@ref) with [`d`](@ref).
+does. `δd` assembled in one weak form is the trustworthy one, which is why
+[`laplacian`](@ref) doesn't just compose [`codifferential`](@ref) with [`d`](@ref).
 
 ## And one thing that is not true
 

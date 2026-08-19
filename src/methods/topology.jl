@@ -6,20 +6,20 @@
 #
 #     H_k(w) = up_laplacian(k) + w · down_laplacian(k),   w ≫ 1,
 #
-# whose smallest eigenvalues belong to forms that are both closed and coclosed —
-# the harmonic representatives of H^k. The Betti number b_k is the size of that
+# whose smallest eigenvalues belong to forms that are both closed and coclosed: the
+# harmonic representatives of H^k. The Betti number b_k is the size of that
 # low-eigenvalue cluster, separated from the rest by a spectral gap. The
 # eigenvalues are NOT exact zeros (the discrete exterior derivative here does not
 # satisfy d² = 0, so there is no exact de Rham kernel); topology lives in the gap.
 #
 # The primary API is `betti_spectrum`, which returns that spectrum as a reviewable
 # `BettiSpectrum`. `betti_number`/`betti_numbers` auto-count the gap on top of it;
-# printing a `BettiSpectrum` shows the cluster and gap so you can read b_k by eye —
+# printing a `BettiSpectrum` shows the cluster and gap so you can read b_k by eye,
 # the recommended check near b_k = 0 or the top intrinsic degree, where the gap
 # heuristic is weak.
 #
 # Requirements: build `dg` with the FULL coefficient basis
-# (`n_coefficients == n_function_basis`, the default) — truncating discards the
+# (`n_coefficients == n_function_basis`, the default). Truncating discards the
 # harmonic forms and collapses every degree.
 
 """
@@ -68,8 +68,8 @@ end
 """
     betti_spectrum(dg, k; w=1e10) -> BettiSpectrum
 
-Primary API. Ascending eigenvalues of the penalised Hodge operator for degree `k`
-— `up_laplacian(dg, k) + w * down_laplacian(dg, k)`, or `laplacian(dg, 0)` for
+Primary API. Ascending eigenvalues of the penalised Hodge operator for degree `k`,
+that is `up_laplacian(dg, k) + w * down_laplacian(dg, k)`, or `laplacian(dg, 0)` for
 `k = 0`. The number of small eigenvalues before the large gap is `b_k`.
 
 Build `dg` with the full coefficient basis (`n_coefficients == n_function_basis`)
@@ -96,7 +96,7 @@ julia> betti_number(bs)                   # so b₁ = 1: the circle has one loop
 1
 ```
 
-The size of `values[1]` itself is float noise amplified by the penalty — see the warning
+The size of `values[1]` itself is float noise amplified by the penalty; see the warning
 on [`BettiSpectrum`](@ref). Count the gap, never a threshold.
 """
 function betti_spectrum(dg::DiffusionGeometry, k::Integer; w::Real=1e10)
@@ -155,7 +155,7 @@ betti_number(dg::DiffusionGeometry, k::Integer; w::Real=1e10, gap_ratio::Real=3.
 """
     betti_gap(bs::BettiSpectrum; gap_ratio=3.0) -> Float64
 
-The multiplicative spectral gap at the auto-detected cut — a confidence signal for
+The multiplicative spectral gap at the auto-detected cut, a confidence signal for
 [`betti_number`](@ref). A large gap (≳10×) is a clear Betti number; a gap near
 `gap_ratio` is marginal and worth an eyeball check.
 
@@ -165,7 +165,7 @@ julia> betti_gap(betti_spectrum(dg, 1)) > 100      # a gap of ~10³×: nothing m
 true
 ```
 
-(The exact number moves between machines — the harmonic eigenvalue below the gap is
+(The exact number moves between machines: the harmonic eigenvalue below the gap is
 noise amplified by the penalty. Compare it against `gap_ratio`, not against a
 remembered value.)
 """
@@ -193,7 +193,7 @@ julia> betti_numbers(dg)
     `b_0` is robust. `b_1` is reliable when the gap is clear (a marginal gap, e.g.
     a lone circle, can flip). Top-degree counts inflate to the ambient form-space
     multiplicity (a surface in ℝ³ reports `b_2 ≈ 3`). Review with
-    [`betti_spectrum`](@ref) and validate against a persistent-homology package —
+    [`betti_spectrum`](@ref) and validate against a persistent-homology package;
     see `bench/betti_vs_ripserer.jl`.
 """
 betti_numbers(dg::DiffusionGeometry; kmax::Integer=ambient_dim(dg), w::Real=1e10,

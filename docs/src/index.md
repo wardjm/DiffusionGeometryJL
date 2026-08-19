@@ -79,7 +79,7 @@ dg3 = from_point_cloud(sphere; knn_kernel=20, n_function_basis=12)
 ```
 
 `dg` is the workhorse: a curve, so its forms only run to degree 2 and its geometry is
-cheap. `dg3` is there for the examples that need a surface — 2-forms, curvature, the
+cheap. `dg3` is there for the examples that need a surface: 2-forms, curvature, the
 Hodge star. The exact definitions live in `docs/doctest_setup.jl`.
 
 ## Where to go next

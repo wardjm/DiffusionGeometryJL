@@ -33,7 +33,7 @@ the tensor's own geometry (`geometry(t)`). It is the whole of the Python idiom
 | `Tensor02`, `Tensor02Sym`       | ellipses (2D) or ellipsoids (3D)                  |
 | `(n, d)` matrix `[, values]`    | a bare point cloud                                |
 
-`dgplot` opens a figure and **cleans the axis** it creates — hiding ticks, grid and
+`dgplot` opens a figure and **cleans the axis** it creates, hiding ticks, grid and
 spines and locking the aspect ratio, because coordinates on an embedded manifold are
 not meaningful in themselves. Pass `clean = false` to keep the axis, or
 `axis = (; …)` to set axis attributes.
@@ -54,7 +54,7 @@ so zero sits at the neutral midpoint. Pass `cyclic = true` for angle-valued fiel
 ## The individual recipes
 
 `dgplot` dispatches to real Makie recipes, which you can also call directly on raw
-arrays (points as an `(n, d)` matrix). Unlike `dgplot`, these do not clean the axis.
+arrays (points as an `(n, d)` matrix). Unlike `dgplot`, these don't clean the axis.
 
 | function          | data                                             |
 |:------------------|:-------------------------------------------------|
@@ -78,11 +78,11 @@ data's bounding box, and neither has Plotly's "fraction of arrow length" knob. S
 
 ## Animation
 
-`dganimate(ft, "evolution.mp4")` records a time-evolving scalar field — the batched
-output of `solve_differential_operator`, which carries a leading time axis — to an
-`.mp4` or `.gif` (chosen by the extension). The colour range is held fixed across
-frames, so the field is seen to decay rather than being renormalised each frame. This
-replaces Python's `methods/pde.py::gif_from_functions`.
+`dganimate(ft, "evolution.mp4")` records a time-evolving scalar field to an `.mp4` or
+`.gif` (chosen by the extension). It takes the batched output of
+`solve_differential_operator`, which carries a leading time axis. The colour range is
+held fixed across frames, so the field is seen to decay rather than being renormalised
+each frame. This replaces Python's `methods/pde.py::gif_from_functions`.
 
 ```julia
 Δ  = laplacian(dg, 0)
@@ -97,15 +97,15 @@ target, so it is reimplemented against Makie rather than translated. A few piece
 deliberately absent:
 
 - **`hodge_star_2_form`** is the one *numerical* routine there (notebook 5 uses it to
-  take the curl of a vector field). It is ported into the package proper —
-  `hodge_star_2_form(ω)` on a 2-`Form`, or on a raw `(n, d, d)` array — and
-  parity-tested against Python, not left in the plotting layer.
+  take the curl of a vector field). It is ported into the package proper as
+  `hodge_star_2_form(ω)`, taking a 2-`Form` or a raw `(n, d, d)` array, and
+  parity-tested against Python rather than left in the plotting layer.
 - **Camera projection** (`_project_points`, `project_to_2d`, and the manual
   camera-distance sort of markers) existed because Plotly cannot export a 3D scene as
   vector graphics. CairoMakie renders 3D straight to PDF/SVG, and `Scatter` has
   `depthsorting`.
 - **`overpic_labels`**, which emitted LaTeX `\put` coordinates for subplot centres,
-  is a LaTeX-layout helper with no Makie analogue — Makie lays out figures with
+  is a LaTeX-layout helper with no Makie analogue. Makie lays out figures with
   `GridLayout` and places text with `Label`.
 
 ## API

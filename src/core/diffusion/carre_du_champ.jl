@@ -185,9 +185,9 @@ end
 
 # blockᵀ = B Aᵀ (an H×F result) for the tall-thin A (F×k), B (H×k) of one
 # neighbourhood. Below `_GEMM_MIN_WORK` a `mul!` would spend more time in BLAS
-# call overhead than in arithmetic — and it is paid once per point — so small
-# blocks accumulate rank-1 over j instead. Writing the transposed result puts the
-# vectorised axis on H, which is the longer of the two for every tensor space here.
+# call overhead than in arithmetic, and that overhead is paid once per point, so
+# small blocks accumulate rank-1 over j instead. Writing the transposed result puts
+# the vectorised axis on H, which is the longer of the two for every tensor space.
 const _GEMM_MIN_WORK = 1 << 11
 
 @inline function _rank_k!(blockT, A, B, F, H, k)

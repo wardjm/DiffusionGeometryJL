@@ -26,7 +26,7 @@ differential geometry on it: take gradients and Hessians, build the exact and
 Hodge Laplacians on differential forms, measure lengths and angles with the
 learned metric, compute curvature, solve heat/wave-type PDEs, estimate geodesic
 distances, and read off Betti numbers from harmonic forms. Everything is driven by
-the heat diffusion of the data — no mesh, no charts, no prescribed metric.
+the heat diffusion of the data: no mesh, no charts, no prescribed metric.
 
 ## Installation
 
@@ -77,7 +77,7 @@ coordinates supplied alongside the connectivity: as the third positional argumen
 for `from_knn_kernel`, `from_graph_kernel`, and `from_sparse_matrix`, or as the
 `immersion_coords` keyword for `from_knn_graph` (which also accepts `data_matrix`).
 `from_edges` takes them as the optional `immersion_coords` keyword and works
-without them — so an edge list alone gets you the same geometry on data that never
+without them, so an edge list alone gets you the same geometry on data that never
 came from a metric space.
 
 Common keywords: `knn_kernel` (neighbours per point), `n_function_basis` (size of
@@ -95,11 +95,9 @@ measure(dg)          # the diffusion measure (n,)
 
 ## Tensor fields
 
-Wrap pointwise data as a typed field on the geometry:
-
-Each factory takes *pointwise* values — one row per point, with the field's
-components flattened along the trailing axis — and projects them onto the
-diffusion basis:
+Wrap pointwise data as a typed field on the geometry. Each factory takes *pointwise*
+values, one row per point, with the field's components flattened along the trailing
+axis, and projects them onto the diffusion basis:
 
 ```julia
 f  = dg_function(dg, data[:, 1])            # ScalarFunction, from (n,) values
@@ -109,8 +107,8 @@ T  = dg_tensor02(dg, randn(200, 9))         # a (0,2)-tensor, from (n, d²)
 S  = dg_tensor02sym(dg, randn(200, 6))      # symmetric (0,2)-tensor, (n, d(d+1)/2)
 ```
 
-The field types — `ScalarFunction`, `VectorField`, `Form`, `Tensor02`,
-`Tensor02Sym`, and `DirectSumElement` — support arithmetic, wedge and tensor
+The field types (`ScalarFunction`, `VectorField`, `Form`, `Tensor02`,
+`Tensor02Sym`, and `DirectSumElement`) support arithmetic, wedge and tensor
 products, `symmetrise`/`transpose_tensor`, and musical isomorphisms `sharp`/`flat`.
 
 ```julia
@@ -119,7 +117,7 @@ wedge(α, β)          # wedge product, degree k₁ + k₂ — also spelled α ^
 f * α                # pointwise product with a function (so is wedge(f, α))
 ```
 
-Read one back with the accessors — a tensor stores *coefficients* in the diffusion
+Read one back with the accessors. A tensor stores *coefficients* in the diffusion
 basis, not pointwise values, and `to_pointwise_basis` is what evaluates it:
 
 ```julia
@@ -149,7 +147,7 @@ pointwise_norm(X)    # pointwise norm (n,)  (or pointwise_norm(dg, X))
 
 ### Batches
 
-Leading axes are *batch* dimensions — many fields carried in one tensor:
+Leading axes are *batch* dimensions, so one tensor can carry many fields:
 
 ```julia
 F = dg_function(dg, ones(3, 60))   # three functions at once
@@ -202,7 +200,7 @@ sectional_curvature(dg, X, Y)       # pointwise sectional curvature (n,)
 ```
 
 There is convenience sugar directly on fields, too, which looks up the right
-operator from the field's own geometry and degree — `grad(f)`, `d(f)`, `d(ω)`,
+operator from the field's own geometry and degree: `grad(f)`, `d(f)`, `d(ω)`,
 `laplacian(ω)`, the interior product `ω(X)` (1-forms only), and Hodge decomposition:
 
 ```julia
@@ -270,11 +268,11 @@ betti_spectra(dg; kmax=2)      # every degree's spectrum, to review at once
 ```
 
 > **Build `dg` with the full coefficient basis** (`n_coefficients == n_function_basis`,
-> the default) — truncating discards the harmonic forms. The auto-count is a
+> the default); truncating discards the harmonic forms. The auto-count is a
 > spectral-gap heuristic: `b₀` (connected components) is robust and `b₁` is reliable
 > when the gap is clear, but a marginal gap can flip and the top intrinsic degree
 > over-counts. Review the spectrum by eye near those cases, and use a dedicated
-> persistent-homology package (e.g. Ripserer) for a cross-check — see
+> persistent-homology package (e.g. Ripserer) for a cross-check; see
 > [`bench/betti_vs_ripserer.jl`](bench/betti_vs_ripserer.jl).
 
 ## Plotting
@@ -305,7 +303,7 @@ available directly. Animate a time-evolving field with `dganimate`. See
 - **Batch axes broadcast from the right** (numpy's rule, *not* Julia's): they are
   matched from the trailing axis, with length-1 axes stretching. A `(3, 4)` batch and
   a `(4,)` batch combine to `(3, 4)`.
-- A tensor holds **coefficients in the diffusion basis, not pointwise values** —
+- A tensor holds **coefficients in the diffusion basis, not pointwise values**.
   `to_pointwise_basis` evaluates it, and `dg_function` and friends project the other
   way. This is why a numeric array scaling a tensor is read as batch-wise scalars.
 - **`*` on two `Form`s is the tensor product**, following Python; the wedge is
@@ -321,8 +319,8 @@ runs on a random 3-D point cloud, `knn=20`, `n_function_basis=32`,
 `n_coefficients=16`; scripts and instructions in [`bench/`](bench)).
 
 The full construction pipeline (`from_point_cloud` + degree-0 Laplacian spectrum)
-is faster across every size tested — the lead is largest at small `n`
-(per-call overhead) and settles around **1.5× at n = 5000** (0.41 s vs 0.62 s), where
+is faster across every size tested. The lead is largest at small `n`
+(per-call overhead) and settles around 1.5× at n = 5000 (0.41 s vs 0.62 s), where
 both implementations are bound by the same BLAS/ARPACK kernels.
 
 The gains are wider on the operator-build path (the weak-matrix contractions),
@@ -342,7 +340,7 @@ OMEinsum's `@optein_str`, with the measure folded into a contraction factor rath
 than passed separately.
 
 One caveat: a fresh Julia process pays a one-time JIT compilation cost (~10 s) on
-the first `from_point_cloud` call, which the interpreted Python does not; every
+the first `from_point_cloud` call, which the interpreted Python doesn't; every
 call after that is warm.
 
 ## Documentation
@@ -357,9 +355,10 @@ julia --project=docs docs/make.jl        # writes docs/build, and runs every doc
 
 The examples are doctests: they assert real values (the Laplacian spectrum of the
 circle, the adjointness of `δ` against `d`, the antisymmetry of the wedge) and run as
-part of the test suite — both the docstring examples and those in the guide pages — so
-they cannot drift from the code. They share a preamble — `dg` (60 points on a circle),
-`dg3` (200 on a sphere), and `f = cos θ` — defined in `docs/doctest_setup.jl`.
+part of the test suite, both the docstring examples and those in the guide pages, so
+they can't drift from the code. They share a preamble defined in
+`docs/doctest_setup.jl`: `dg` (60 points on a circle), `dg3` (200 on a sphere), and
+`f = cos θ`.
 
 The site also carries a [Conventions](docs/src/conventions.md) page (coefficients vs
 values, batch broadcasting, weak vs strong forms) and a catalogue of the

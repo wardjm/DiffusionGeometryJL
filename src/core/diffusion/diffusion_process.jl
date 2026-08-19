@@ -139,7 +139,7 @@ end
 # Σ exp(-v/ε). `exp(-x)` is exactly 0.0 once x passes 1075·log 2 ≈ 745.1, and
 # adding an exact zero cannot change the running sum, so skipping those terms is
 # bit-identical to summing all of them. It only bites at the small-ε end of the
-# sweep — a few percent of the total — but it costs a compare against an exp.
+# sweep, a few percent of the total, and it costs a compare against an exp.
 function _kernel_sum(entries::AbstractVector{<:Real}, epsilon::Real)
     inv_eps = 1.0 / epsilon
     cutoff = 746.0 * epsilon
@@ -295,9 +295,9 @@ complexity with `φ_0 ≡ 1`. Uses Arpack for `n0 < n`, otherwise a dense Hermit
 eigendecomposition.
 
 This is the basis every coefficient in the package is expressed in. The columns are
-ordered by decreasing kernel eigenvalue — the low-frequency modes of the data come
-first — and the *sign* of each column beyond `φ_0` is whatever the eigensolver
-returns, so never depend on it.
+ordered by decreasing kernel eigenvalue, so the low-frequency modes of the data come
+first. The *sign* of each column beyond `φ_0` is whatever the eigensolver returns, so
+never depend on it.
 
 # Examples
 ```jldoctest

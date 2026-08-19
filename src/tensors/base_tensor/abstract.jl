@@ -80,8 +80,8 @@ function degree end
 """
     cdc_components(space) -> Array
 
-The pointwise inner-product matrices of the space's component frame, shape `(n, C, C)`
-— the carré du champ evaluated on whatever `e_a` the space is built from. It is the one
+The pointwise inner-product matrices of the space's component frame, shape `(n, C, C)`:
+the carré du champ evaluated on whatever `e_a` the space is built from. It is the one
 thing a concrete space has to supply: the metric, the [`gram`](@ref) matrix, and
 [`component_dim`](@ref) are all derived from it.
 

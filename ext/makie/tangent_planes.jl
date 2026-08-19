@@ -19,7 +19,7 @@ function Makie.convert_arguments(::Type{<:DGTangentPlanes}, pts::AbstractMatrix,
     size(bundle, 1) == size(pts, 1) ||
         throw(ArgumentError("got $(size(bundle, 1)) frames for $(size(pts, 1)) points"))
     size(bundle)[2:3] == (3, 2) ||
-        throw(ArgumentError("bundle must be (n, 3, 2) — two ambient tangent vectors per point — got $(size(bundle))"))
+        throw(ArgumentError("bundle must be (n, 3, 2), two ambient tangent vectors per point; got $(size(bundle))"))
     return (_to_points(pts), Array{Float64}(_realify(bundle)))
 end
 

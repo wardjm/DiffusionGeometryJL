@@ -27,7 +27,7 @@ There are two truncation levels, and they are not the same thing. `n_function_ba
 is how many eigenfunctions the *diffusion* resolves; `n_coefficients ≤
 n_function_basis` is how many of them a *tensor* is expanded in. Functions always use
 the full basis; vector fields, forms and (0,2)-tensors use `n_coefficients`. Lowering
-it is the main performance dial — but the topology functions need the full basis, or
+it is the main performance dial, but the topology functions need the full basis, or
 the harmonic forms are truncated away.
 
 # Examples
@@ -370,8 +370,8 @@ Base.:(==)(a::DiffusionGeometry, b::DiffusionGeometry) = a === b
 """
     function_space(dg) -> FunctionSpace
 
-The space of scalar functions on `dg`. Cached, so it is the *same* object every time
-— which is what lets operators compare domains and codomains by identity.
+The space of scalar functions on `dg`. Cached, so it is the *same* object every
+time, which is what lets operators compare domains and codomains by identity.
 
 # Examples
 ```jldoctest
